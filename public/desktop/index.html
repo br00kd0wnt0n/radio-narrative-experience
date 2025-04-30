@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radio Narrative Experience - Desktop</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="/shared/socket.io.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="radio-container">
+      <div class="radio">
+        <div class="display">
+          <div class="frequency-display">
+            <span id="current-frequency">87.5</span> MHz
+          </div>
+          <div class="signal-strength">
+            <div class="signal-bar" id="signal-bar-1"></div>
+            <div class="signal-bar" id="signal-bar-2"></div>
+            <div class="signal-bar" id="signal-bar-3"></div>
+            <div class="signal-bar" id="signal-bar-4"></div>
+            <div class="signal-bar" id="signal-bar-5"></div>
+          </div>
+          <div class="status" id="status">Disconnected</div>
+          <div class="pairing-code" id="pairing-code"></div>
+        </div>
+        <div class="control-panel">
+          <div class="tuning-knob-container">
+            <div class="tuning-knob" id="tuning-knob"></div>
+            <div class="tuning-marker"></div>
+          </div>
+          <div class="volume-control">
+            <label for="volume">Volume</label>
+            <input type="range" id="volume" min="0" max="100" value="70">
+          </div>
+        </div>
+        <div class="speaker">
+          <div class="speaker-grill"></div>
+        </div>
+      </div>
+    </div>
+    <div class="conversation-log" id="conversation-log">
+      <div class="log-title">Transmission Log</div>
+      <div class="messages" id="messages"></div>
+    </div>
+  </div>
+
+  <audio id="static-audio" loop>
+    <source src="/shared/static.mp3" type="audio/mpeg">
+  </audio>
+  <audio id="transmission-audio">
+    <source src="" type="audio/mpeg">
+  </audio>
+
+  <script src="desktop.js"></script>
+</body>
+</html>

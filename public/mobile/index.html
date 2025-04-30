@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radio Narrative Experience - Mobile</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="/shared/socket.io.js"></script>
+</head>
+<body>
+  <div class="container">
+    <div class="walkie-talkie">
+      <div class="display">
+        <div class="status" id="status">Disconnected</div>
+        <div class="pairing">
+          <input type="text" id="pairing-code" placeholder="Enter pairing code">
+          <button id="pair-button">Pair</button>
+        </div>
+        <div class="active-frequency" id="active-frequency">No active frequency</div>
+      </div>
+      <div class="speaker">
+        <div class="speaker-grill"></div>
+      </div>
+      <div class="controls">
+        <button id="push-to-talk" class="push-to-talk">Push to Talk</button>
+      </div>
+    </div>
+    <div class="messages" id="messages"></div>
+  </div>
+  
+  <audio id="static-audio" loop>
+    <source src="/shared/static.mp3" type="audio/mpeg">
+  </audio>
+  
+  <script src="mobile.js"></script>
+</body>
+</html>

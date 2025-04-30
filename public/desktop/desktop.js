@@ -1,0 +1,741 @@
+// Desktop Interface Logic - public/desktop/desktop.js
+document.addEventListener('DOMContentLoaded', function() {
+  // Elements
+  const tuningKnob = document.getElementById('tuning-knob');
+  const currentFrequencyDisplay = document.getElementById('current-frequency');
+  const volumeControl = document.getElementById('volume');
+  const statusElement = document.getElementById('status');
+  const pairingCodeElement = document.getElementById('pairing-code');
+  const messagesElement = document.getElementById('messages');
+  const staticAudio = document.getElementById('static-audio');
+  const signalBars = [
+    document.getElementById('signal-bar-1'),
+    document.getElementById('signal-bar-2'),
+    document.getElementById('signal-bar-3'),
+    document.getElementById('signal-bar-4'),
+    document.getElementById('signal-bar-5')
+  ];
+  
+  // Radio state
+  let rotation = 0; // Current rotation of the tuning knob in degrees
+  let currentFrequency = 87.5; // Starting frequency
+  let isDragging = false;
+  let lastMouseX = 0;
+  let isFrequencyActive = false;
+  let socket = null;
+  
+  // Active frequencies that have content
+  const activeFrequencies = ['87.5', '89.3', '92.1', '95.7', '98.7', '101.2', '104.3', '107.9', '110.5'];
+  
+  // Connect to WebSocket server
+  function connectSocket() {
+    socket = io();
+    
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      statusElement.textContent = 'Connected';
+      statusElement.style.color = '#4caf50';
+      
+      // Register as desktop client
+      socket.emit('register', { type: 'desktop' });
+    });
+    
+    socket.on('registered', (data) => {
+      pairingCodeElement.textContent = `Pairing Code: ${data.pairing_code}`;
+    });
+    
+    socket.on('paired', (data) => {
+      if (data.success) {
+        statusElement.textContent = 'Paired with mobile';
+        statusElement.style.color = '#2196f3';
+      }
+    });
+    
+    socket.on('frequency_active', (data) => {
+      console.log("Frequency active event received:", data);
+      isFrequencyActive = data.active;
+      updateFrequencyDisplay();
+      
+      if (data.active) {
+        console.log("Setting active signal strength");
+        updateSignalBars();
+        
+        // Ensure display elements exist
+        const frequencyDisplay = document.querySelector('.frequency-display') || createDisplayElement('frequency-display');
+        const characterDisplay = document.querySelector('.character-display') || createDisplayElement('character-display');
+        const locationDisplay = document.querySelector('.location-display') || createDisplayElement('location-display');
+        
+        // Update UI to show active frequency
+        frequencyDisplay.textContent = `Active: ${currentFrequency} MHz`;
+        characterDisplay.textContent = `Character: ${data.character}`;
+        locationDisplay.textContent = `Location: ${data.location}`;
+        
+        // Update narrative progress if provided
+        if (data.narrativeContext) {
+          updateNarrativeProgress(data.storyProgress || 0, data.narrativeContext);
+        }
+        
+        // Add system message about the frequency
+        addMessage('SYSTEM', `Tuned to frequency ${currentFrequency} MHz. ${data.character} detected at ${data.location}.`, 'system');
+      } else {
+        console.log("Setting inactive signal strength");
+        const randomStrength = Math.floor(Math.random() * 3);
+        updateSignalBars();
+        
+        // Ensure display elements exist
+        const frequencyDisplay = document.querySelector('.frequency-display') || createDisplayElement('frequency-display');
+        const characterDisplay = document.querySelector('.character-display') || createDisplayElement('character-display');
+        const locationDisplay = document.querySelector('.location-display') || createDisplayElement('location-display');
+        
+        // Update UI to show static
+        frequencyDisplay.textContent = `Static: ${currentFrequency} MHz`;
+        characterDisplay.textContent = 'Character: None';
+        locationDisplay.textContent = 'Location: Unknown';
+        
+        // Add system message about static
+        addMessage('SYSTEM', `Only static on frequency ${currentFrequency} MHz.`, 'system');
+      }
+    });
+    
+    socket.on('ai_response', (data) => {
+      console.log("Received AI response:", data);
+      addMessage(data.character, data.message, 'character');
+      
+      if (data.audioPath) {
+        playGeneratedAudio(data.audioPath);
+      } else {
+        // Fallback to the simulated audio notification
+        addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
+      }
+    });
+    
+    socket.on('mobile_disconnected', () => {
+      statusElement.textContent = 'Connected (Mobile disconnected)';
+      statusElement.style.color = '#ff9800';
+      addMessage('SYSTEM', 'Mobile device disconnected', 'system');
+    });
+    
+    socket.on('disconnect', () => {
+      statusElement.textContent = 'Disconnected';
+      statusElement.style.color = '#f44336';
+      addMessage('SYSTEM', 'Disconnected from server', 'system');
+    });
+  }
+  
+  // Initialize audio context for static sound
+  let audioContext = null;
+  let staticGainNode = null;
+  let staticFilterNode = null;  // Make filter node accessible globally
+  
+  // Function to initialize noise generation
+  function initAudio() {
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Create gain node for volume control
+      staticGainNode = audioContext.createGain();
+      staticGainNode.gain.value = 0.7;
+      
+      // Check if we have the static audio file
+      if (staticAudio.error || !staticAudio.src) {
+        // Generate static noise using Web Audio API
+        if (window.AudioWorkletNode && audioContext.audioWorklet) {
+          // Use the modern AudioWorkletNode approach
+          initAudioWorklet();
+        } else {
+          // Fallback to older approach with warning acknowledgment
+          console.log("Using deprecated ScriptProcessorNode as fallback");
+          initLegacyNoiseGenerator();
+        }
+      } else {
+        // Set up audio source from the static audio element
+        const source = audioContext.createMediaElementSource(staticAudio);
+        
+        // Connect nodes
+        source.connect(staticGainNode);
+        staticGainNode.connect(audioContext.destination);
+        
+        // Start playing static
+        staticAudio.play().catch(e => {
+          console.error("Couldn't play static audio file:", e);
+          // Fall back to generated noise
+          if (window.AudioWorkletNode && audioContext.audioWorklet) {
+            initAudioWorklet();
+          } else {
+            initLegacyNoiseGenerator();
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Audio initialization failed:', error);
+    }
+  }
+
+  // Modern approach using AudioWorkletNode
+  async function initAudioWorklet() {
+    try {
+      // We need to create and load a worklet processor
+      const workletBlob = new Blob([`
+        class NoiseGenerator extends AudioWorkletProcessor {
+          process(inputs, outputs) {
+            const output = outputs[0];
+            
+            for (let channel = 0; channel < output.length; ++channel) {
+              const outputChannel = output[channel];
+              for (let i = 0; i < outputChannel.length; ++i) {
+                // Generate white noise
+                outputChannel[i] = Math.random() * 2 - 1;
+              }
+            }
+            
+            // Return true to keep the processor alive
+            return true;
+          }
+        }
+        
+        registerProcessor('noise-generator', NoiseGenerator);
+      `], { type: 'application/javascript' });
+      
+      const workletURL = URL.createObjectURL(workletBlob);
+      
+      // Load the worklet processor
+      await audioContext.audioWorklet.addModule(workletURL);
+      
+      // Create noise generator
+      const noiseNode = new AudioWorkletNode(audioContext, 'noise-generator');
+      
+      // Create filter to shape noise into more "radio static" sound
+      const filter = audioContext.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1000;
+      filter.Q.value = 0.5;
+      
+      // Connect nodes
+      noiseNode.connect(filter);
+      filter.connect(staticGainNode);
+      staticGainNode.connect(audioContext.destination);
+      
+      console.log("Using modern AudioWorkletNode for noise generation");
+      
+      // Clean up the blob URL
+      URL.revokeObjectURL(workletURL);
+    } catch (error) {
+      console.error("Error initializing AudioWorklet:", error);
+      // Fall back to legacy method if AudioWorklet fails
+      initLegacyNoiseGenerator();
+    }
+  }
+
+  // Legacy approach using ScriptProcessorNode (with deprecation warning)
+  function initLegacyNoiseGenerator() {
+    console.warn("Using deprecated ScriptProcessorNode. This will be removed in future browser versions.");
+    
+    const bufferSize = 4096;
+    const noiseNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+    
+    // Generate white noise
+    noiseNode.onaudioprocess = function(e) {
+      const output = e.outputBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+    };
+    
+    // Create filter to shape noise into more "radio static" sound
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1000;
+    filter.Q.value = 0.5;
+    
+    // Connect nodes
+    noiseNode.connect(filter);
+    filter.connect(staticGainNode);
+    staticGainNode.connect(audioContext.destination);
+    
+    // Keep reference to nodes to prevent garbage collection
+    window.noiseNode = noiseNode;
+    window.staticFilter = filter;
+  }
+  
+  // Update the frequency display
+  function updateFrequencyDisplay() {
+    // Format to one decimal place for display
+    const formattedFrequency = parseFloat(currentFrequency.toFixed(1));
+    currentFrequencyDisplay.textContent = formattedFrequency.toFixed(1);
+    
+    // Visual feedback for active frequency
+    if (isFrequencyActive) {
+      currentFrequencyDisplay.classList.add('frequency-active');
+    } else {
+      currentFrequencyDisplay.classList.remove('frequency-active');
+    }
+    
+    // Update signal bars based on proximity to active frequencies
+    updateSignalBars();
+    
+    // Adjust static volume
+    adjustStaticVolume();
+  }
+  
+  // New function specifically for updating signal bars
+  function updateSignalBars() {
+    let signalStrength = 0;
+    
+    if (isFrequencyActive) {
+      // Full signal when on active frequency
+      signalStrength = 5;
+    } else {
+      // Calculate proximity to nearest active frequency
+      let minDistance = 100;
+      for (const freq of activeFrequencies) {
+        const distance = Math.abs(currentFrequency - parseFloat(freq));
+        if (distance < minDistance) {
+          minDistance = distance;
+        }
+      }
+      
+      // Map distance to signal strength (0-4)
+      if (minDistance < 0.1) signalStrength = 4;
+      else if (minDistance < 0.3) signalStrength = 3;
+      else if (minDistance < 0.7) signalStrength = 2;
+      else if (minDistance < 1.5) signalStrength = 1;
+      else signalStrength = 0;
+    }
+    
+    console.log(`Frequency: ${currentFrequency.toFixed(1)}, Signal strength: ${signalStrength}`);
+    
+    // Update the visual signal bars
+    signalBars.forEach((bar, index) => {
+      if (index < signalStrength) {
+        bar.classList.add('active');
+      } else {
+        bar.classList.remove('active');
+      }
+    });
+  }
+  
+  // Adjust static volume based on proximity to active frequency
+  function adjustStaticVolume() {
+    if (!staticGainNode) return;
+    
+    // Find distance to nearest active frequency
+    let minDistance = 20; // Initialize with a large value
+    
+    for (const freq of activeFrequencies) {
+      const distance = Math.abs(currentFrequency - freq);
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
+    
+    // Calculate signal strength based on proximity (0-5)
+    let signalStrength;
+    if (isFrequencyActive) {
+      signalStrength = 4; // Strong signal when on active frequency
+    } else if (minDistance < 0.3) {
+      // Getting close to an active frequency
+      signalStrength = 3;
+    } else if (minDistance < 0.6) {
+      signalStrength = 2;
+    } else if (minDistance < 1.0) {
+      signalStrength = 1;
+    } else {
+      signalStrength = 0;
+    }
+    
+    // Update signal strength display
+    updateSignalBars();
+    
+    // Static gets quieter as we get closer to an active frequency
+    let staticVolume;
+    if (isFrequencyActive) {
+      staticVolume = 0.1; // Very quiet when on active frequency
+    } else {
+      // Scale from 0.3 to 1.0 based on distance
+      staticVolume = 0.3 + (0.7 * Math.min(minDistance * 5, 1.0));
+    }
+    
+    // Apply volume with a smooth transition
+    staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+    staticGainNode.gain.linearRampToValueAtTime(
+      staticVolume, 
+      audioContext.currentTime + 0.2
+    );
+    
+    // Update filter parameters if we have a filter node
+    if (staticFilterNode) {
+      staticFilterNode.frequency.setValueAtTime(staticFilterNode.frequency.value, audioContext.currentTime);
+      staticFilterNode.frequency.linearRampToValueAtTime(
+        800 + (1200 * Math.min(minDistance * 3, 1.0)),
+        audioContext.currentTime + 0.2
+      );
+      
+      staticFilterNode.Q.setValueAtTime(staticFilterNode.Q.value, audioContext.currentTime);
+      staticFilterNode.Q.linearRampToValueAtTime(
+        0.2 + (1.8 * Math.min(minDistance * 3, 1.0)),
+        audioContext.currentTime + 0.2
+      );
+    }
+  }
+  
+  // Add message to the conversation log
+  function addMessage(sender, text, type) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}`;
+    
+    const messageInfo = document.createElement('div');
+    messageInfo.className = 'message-info';
+    messageInfo.textContent = `${sender} | ${new Date().toLocaleTimeString()}`;
+    
+    const messageText = document.createElement('div');
+    messageText.className = 'message-text';
+    messageText.textContent = text;
+    
+    messageDiv.appendChild(messageInfo);
+    messageDiv.appendChild(messageText);
+    
+    messagesElement.appendChild(messageDiv);
+    
+    // Auto-scroll to bottom
+    messagesElement.scrollTop = messagesElement.scrollHeight;
+  }
+  
+  // Play transmission audio (with voice effect)
+  function playTransmissionAudio(text) {
+    // In a full implementation, this would use Text-to-Speech with effects
+    // For this prototype, we'll simulate it
+    console.log('Would play audio for:', text);
+    
+    // Create a temporary audio element for the transmission
+    const transmissionAudio = document.getElementById('transmission-audio');
+    if (transmissionAudio && audioContext) {
+      // Apply radio voice effect
+      createRadioVoiceEffect(transmissionAudio);
+      
+      // In a full implementation, this would be actual audio
+      // For now, we'll just play the static sound
+      transmissionAudio.play();
+    }
+    
+    // Adding placeholder notification
+    addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
+  }
+  
+  // Create radio voice effect
+  function createRadioVoiceEffect(audioElement) {
+    const source = audioContext.createMediaElementSource(audioElement);
+    
+    // Create filter nodes for radio effect
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 2000;
+    
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 500;
+    
+    // Create distortion for radio "crunch"
+    const distortion = audioContext.createWaveShaper();
+    distortion.curve = createDistortionCurve(100);
+    distortion.oversample = '4x';
+    
+    // Connect the nodes
+    source.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(distortion);
+    distortion.connect(audioContext.destination);
+    
+    return source;
+  }
+  
+  // Helper function to create distortion curve
+  function createDistortionCurve(amount) {
+    const samples = 44100;
+    const curve = new Float32Array(samples);
+    const deg = Math.PI / 180;
+    
+    for (let i = 0; i < samples; i++) {
+      const x = (i * 2) / samples - 1;
+      curve[i] = (3 + amount) * x * 20 * deg / (Math.PI + amount * Math.abs(x));
+    }
+    
+    return curve;
+  }
+  
+  // Debounce frequency changes to avoid spamming the server
+  let frequencyChangeTimeout = null;
+  function debounceFrequencyChange() {
+    if (frequencyChangeTimeout) {
+      clearTimeout(frequencyChangeTimeout);
+    }
+    
+    frequencyChangeTimeout = setTimeout(() => {
+      if (socket) {
+        socket.emit('tune', { frequency: currentFrequency.toFixed(1) });
+      }
+    }, 200);
+  }
+  
+  // Initialize tuning knob interaction
+  function initTuningKnob() {
+    tuningKnob.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastMouseX = e.clientX;
+      tuningKnob.style.cursor = 'grabbing';
+      e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      
+      const deltaX = e.clientX - lastMouseX;
+      lastMouseX = e.clientX;
+      
+      // Update rotation
+      rotation += deltaX;
+      tuningKnob.style.transform = `rotate(${rotation}deg)`;
+      
+      // Map rotation to frequency range (87.5 - 108.0 MHz)
+      // 600 degrees of rotation maps to full FM band
+      const normalizedRotation = (rotation % 600 + 600) % 600;
+      // Calculate raw frequency
+      const rawFrequency = 87.5 + (normalizedRotation / 600) * 20.5;
+      // Round to nearest 0.1 for more realistic FM tuning
+      currentFrequency = Math.round(rawFrequency * 10) / 10;
+      
+      // Clamp to valid FM range
+      currentFrequency = Math.max(87.5, Math.min(108.0, currentFrequency));
+      
+      // Update display and signal strength
+      updateFrequencyDisplay();
+      adjustStaticVolume(); // Update signal strength based on proximity to active frequencies
+      
+      // Notify server about frequency change (debounced)
+      debounceFrequencyChange();
+    });
+    
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        tuningKnob.style.cursor = 'grab';
+        
+        // Final frequency update
+        if (socket) {
+          socket.emit('tune', { frequency: currentFrequency.toFixed(1) });
+        }
+      }
+    });
+    
+    // Volume control
+    volumeControl.addEventListener('input', (e) => {
+      const volume = e.target.value / 100;
+      
+      if (staticGainNode) {
+        staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+        staticGainNode.gain.linearRampToValueAtTime(
+          volume, 
+          audioContext.currentTime + 0.1
+        );
+      }
+    });
+  }
+  
+  // Initialize the application
+  function init() {
+    // Add transmission indicator
+    const transmissionIndicator = document.createElement('div');
+    transmissionIndicator.className = 'transmission-indicator';
+    
+    // Find a suitable container element that exists
+    const container = document.querySelector('.frequency-display') || 
+                     document.querySelector('.conversation-log') || 
+                     document.body;
+    
+    if (container) {
+      container.appendChild(transmissionIndicator);
+    } else {
+      console.warn('Could not find suitable container for transmission indicator');
+    }
+
+    // Check for browser compatibility
+    const compatibilityCheck = {
+      audioContext: !!(window.AudioContext || window.webkitAudioContext),
+      mediaDevices: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      speechRecognition: !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+    };
+
+    console.log('Browser compatibility:', compatibilityCheck);
+
+    // Add warnings for missing features
+    if (!compatibilityCheck.audioContext || !compatibilityCheck.mediaDevices) {
+      addSystemMessage('Warning: Your browser may not support all audio features. For the best experience, please use Chrome.');
+    }
+    if (!compatibilityCheck.speechRecognition) {
+      addSystemMessage('Warning: Speech recognition is not supported in your browser. You can still use text input.');
+    }
+
+    // Add initial system message
+    addMessage('SYSTEM', 'Radio initialized. Connecting to server...', 'system');
+    
+    // Initialize WebSocket connection
+    connectSocket();
+    
+    // Initialize tuning knob
+    initTuningKnob();
+    
+    // Initialize audio on first user interaction
+    document.addEventListener('click', () => {
+      if (!audioContext) {
+        initAudio();
+        addMessage('SYSTEM', 'Audio initialized', 'system');
+      }
+    }, { once: true });
+  }
+  
+  // Add debug button to the interface
+  const debugButton = document.createElement('button');
+  debugButton.textContent = 'Debug Signal';
+  debugButton.style.position = 'fixed';
+  debugButton.style.bottom = '10px';
+  debugButton.style.right = '10px';
+  debugButton.style.zIndex = '1000';
+  document.body.appendChild(debugButton);
+
+  debugButton.addEventListener('click', () => {
+    console.log('Current frequency:', currentFrequency);
+    console.log('Is frequency active:', isFrequencyActive);
+    console.log('Active frequencies:', activeFrequencies);
+    
+    // Test each signal level
+    for (let i = 0; i <= 5; i++) {
+      setTimeout(() => {
+        console.log(`Setting signal level to ${i}`);
+        updateSignalBars(i);
+      }, i * 500);
+    }
+  });
+  
+  // Start the application
+  init();
+
+  // Add narrative progress tracking
+  function updateNarrativeProgress(progress, narrativeContext) {
+    // Create or update progress element if it doesn't exist
+    let progressElement = document.getElementById('narrative-progress');
+    
+    if (!progressElement) {
+      progressElement = document.createElement('div');
+      progressElement.id = 'narrative-progress';
+      progressElement.className = 'narrative-progress';
+      document.querySelector('.conversation-log').prepend(progressElement);
+    }
+    
+    // Update content
+    progressElement.innerHTML = `
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: ${progress}%"></div>
+      </div>
+      <div class="narrative-status">Story Progress: ${progress}%</div>
+    `;
+    
+    // Add system message about narrative development
+    if (narrativeContext === 'plot_twist') {
+      addMessage('SYSTEM', 'Strange inconsistencies detected in communications. Narrative taking unexpected turn.', 'system');
+    } else if (narrativeContext === 'advanced' && progress > 75) {
+      addMessage('SYSTEM', 'Communications converging. Story approaching conclusion.', 'system');
+    }
+  }
+
+  // Function to play generated audio with radio effects
+  function playGeneratedAudio(audioPath) {
+    // Create audio element
+    const audioElement = new Audio(audioPath);
+    
+    // Prepare audio nodes
+    const source = audioContext.createMediaElementSource(audioElement);
+    
+    // Create radio effect filter chain
+    const bandpass = audioContext.createBiquadFilter();
+    bandpass.type = "bandpass";
+    bandpass.frequency.value = 1800;
+    bandpass.Q.value = 0.7;
+    
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 500;
+    
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 2500;
+    
+    // Create distortion for radio "crunch"
+    const distortion = audioContext.createWaveShaper();
+    distortion.curve = createDistortionCurve(20);
+    distortion.oversample = "4x";
+    
+    // Lower static volume during speech
+    if (staticGainNode) {
+      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+      staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.2);
+    }
+    
+    // Connect nodes
+    source.connect(bandpass);
+    bandpass.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(distortion);
+    distortion.connect(audioContext.destination);
+    
+    // Play audio
+    audioElement.play();
+    
+    // Restore static volume when finished
+    audioElement.onended = function() {
+      if (staticGainNode) {
+        adjustStaticVolume();
+      }
+    };
+  }
+
+  // Update startTransmitting and stopTransmitting to toggle indicator
+  async function startTransmitting(e) {
+    e.preventDefault();
+    
+    if (!isPaired || !isFrequencyActive || isTransmitting) {
+      console.log("Cannot transmit: ", {isPaired, isFrequencyActive, isTransmitting});
+      return;
+    }
+    
+    isTransmitting = true;
+    pushToTalkButton.classList.add('active');
+    document.querySelector('.transmission-indicator').classList.add('active');
+    
+    // Rest of function...
+  }
+
+  function stopTransmitting(e) {
+    e.preventDefault();
+    
+    if (!isTransmitting) return;
+    
+    isTransmitting = false;
+    pushToTalkButton.classList.remove('active');
+    document.querySelector('.transmission-indicator').classList.remove('active');
+    
+    // Rest of function...
+  }
+
+  // Helper function to create display elements
+  function createDisplayElement(className) {
+    const element = document.createElement('div');
+    element.className = className;
+    
+    // Find a suitable container
+    const container = document.querySelector('.radio-interface') || 
+                     document.querySelector('.conversation-log') || 
+                     document.body;
+    
+    container.appendChild(element);
+    return element;
+  }
+});

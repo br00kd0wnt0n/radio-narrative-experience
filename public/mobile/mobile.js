@@ -1,0 +1,671 @@
+// Mobile Interface Logic - public/mobile/mobile.js
+console.log('Mobile interface initializing...');
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Elements
+  const statusElement = document.getElementById('status');
+  const pairingCodeInput = document.getElementById('pairing-code');
+  const pairButton = document.getElementById('pair-button');
+  const pushToTalkButton = document.getElementById('push-to-talk');
+  const activeFrequencyElement = document.getElementById('active-frequency');
+  const messagesElement = document.getElementById('messages');
+  const staticAudio = document.getElementById('static-audio');
+  
+  // State
+  let socket = null;
+  let isPaired = false;
+  let isFrequencyActive = false;
+  let currentCharacter = null;
+  let isTransmitting = false;
+  let audioContext = null;
+  let staticGainNode = null;
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
+  let speechRecognition = null;
+  
+  // Connect to WebSocket server
+  function connectSocket() {
+    socket = io();
+    
+    // Log WebSocket connection attempts
+    socket.on('connect', () => {
+      console.log('Successfully connected to server');
+      statusElement.textContent = 'Connected';
+      statusElement.style.color = '#4caf50';
+      
+      // Register as mobile client
+      socket.emit('register', { type: 'mobile' });
+    });
+    
+    socket.on('connect_error', (error) => {
+      console.error('WebSocket connection error:', error);
+      statusElement.textContent = 'Connection failed';
+      statusElement.style.color = '#f44336';
+    });
+    
+    socket.on('paired', (data) => {
+      if (data.success) {
+        isPaired = true;
+        statusElement.textContent = 'Paired with desktop';
+        statusElement.style.color = '#2196f3';
+        
+        // Hide pairing controls
+        document.querySelector('.pairing').style.display = 'none';
+        
+        // Add system message
+        addMessage('SYSTEM', 'Paired with desktop device', 'system');
+      } else {
+        statusElement.textContent = 'Pairing failed';
+        statusElement.style.color = '#f44336';
+        
+        // Add system message
+        addMessage('SYSTEM', 'Pairing failed: ' + (data.message || 'Unknown error'), 'system');
+      }
+    });
+    
+    socket.on('frequency_active', (data) => {
+      isFrequencyActive = data.active;
+      
+      if (data.active) {
+        currentCharacter = data.character;
+        activeFrequencyElement.textContent = `Active frequency: ${data.character}`;
+        activeFrequencyElement.classList.add('active');
+        
+        // Enable push-to-talk
+        pushToTalkButton.disabled = false;
+        
+        // Add system message
+        addMessage('SYSTEM', `Active frequency detected: ${data.character}`, 'system');
+      } else {
+        currentCharacter = null;
+        activeFrequencyElement.textContent = 'No active frequency';
+        activeFrequencyElement.classList.remove('active');
+        
+        // Disable push-to-talk
+        pushToTalkButton.disabled = true;
+      }
+      
+      // Adjust static volume
+      if (staticGainNode) {
+        const volume = data.active ? 0.1 : 0.7;
+        staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+        staticGainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.2);
+      }
+    });
+    
+    socket.on('ai_response', (data) => {
+      console.log("Received AI response:", data);
+      addMessage(data.character, data.message, 'character');
+      
+      if (data.audioPath) {
+        playGeneratedAudio(data.audioPath);
+      } else {
+        // Fallback to the simulated audio notification
+        addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
+      }
+    });
+    
+    socket.on('desktop_disconnected', () => {
+      isPaired = false;
+      statusElement.textContent = 'Desktop disconnected';
+      statusElement.style.color = '#ff9800';
+      
+      // Show pairing controls again
+      document.querySelector('.pairing').style.display = 'flex';
+      
+      // Disable push-to-talk
+      pushToTalkButton.disabled = true;
+      
+      // Add system message
+      addMessage('SYSTEM', 'Desktop device disconnected', 'system');
+    });
+    
+    socket.on('disconnect', () => {
+      isPaired = false;
+      statusElement.textContent = 'Disconnected';
+      statusElement.style.color = '#f44336';
+      
+      // Add system message
+      addMessage('SYSTEM', 'Disconnected from server', 'system');
+    });
+  }
+  
+  // Initialize audio context for static sound
+  function initAudio() {
+    try {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Create gain node for volume control
+      staticGainNode = audioContext.createGain();
+      staticGainNode.gain.value = 0.7;
+      
+      // Check if we have the static audio file
+      if (staticAudio.error || !staticAudio.src) {
+        // Generate static noise using Web Audio API
+        if (window.AudioWorkletNode && audioContext.audioWorklet) {
+          // Use the modern AudioWorkletNode approach
+          initAudioWorklet();
+        } else {
+          // Fallback to older approach with warning acknowledgment
+          console.log("Using deprecated ScriptProcessorNode as fallback");
+          initLegacyNoiseGenerator();
+        }
+      } else {
+        // Set up audio source from the static audio element
+        const source = audioContext.createMediaElementSource(staticAudio);
+        
+        // Connect nodes
+        source.connect(staticGainNode);
+        staticGainNode.connect(audioContext.destination);
+        
+        // Start playing static
+        staticAudio.play().catch(e => {
+          console.error("Couldn't play static audio file:", e);
+          // Fall back to generated noise
+          if (window.AudioWorkletNode && audioContext.audioWorklet) {
+            initAudioWorklet();
+          } else {
+            initLegacyNoiseGenerator();
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Audio initialization failed:', error);
+    }
+  }
+  
+  // Modern approach using AudioWorkletNode
+  async function initAudioWorklet() {
+    try {
+      // We need to create and load a worklet processor
+      const workletBlob = new Blob([`
+        class NoiseGenerator extends AudioWorkletProcessor {
+          process(inputs, outputs) {
+            const output = outputs[0];
+            
+            for (let channel = 0; channel < output.length; ++channel) {
+              const outputChannel = output[channel];
+              for (let i = 0; i < outputChannel.length; ++i) {
+                // Generate white noise
+                outputChannel[i] = Math.random() * 2 - 1;
+              }
+            }
+            
+            // Return true to keep the processor alive
+            return true;
+          }
+        }
+        
+        registerProcessor('noise-generator', NoiseGenerator);
+      `], { type: 'application/javascript' });
+      
+      const workletURL = URL.createObjectURL(workletBlob);
+      
+      // Load the worklet processor
+      await audioContext.audioWorklet.addModule(workletURL);
+      
+      // Create noise generator
+      const noiseNode = new AudioWorkletNode(audioContext, 'noise-generator');
+      
+      // Create filter to shape noise into more "radio static" sound
+      const filter = audioContext.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 1000;
+      filter.Q.value = 0.5;
+      
+      // Connect nodes
+      noiseNode.connect(filter);
+      filter.connect(staticGainNode);
+      staticGainNode.connect(audioContext.destination);
+      
+      console.log("Using modern AudioWorkletNode for noise generation");
+      
+      // Clean up the blob URL
+      URL.revokeObjectURL(workletURL);
+    } catch (error) {
+      console.error("Error initializing AudioWorklet:", error);
+      // Fall back to legacy method if AudioWorklet fails
+      initLegacyNoiseGenerator();
+    }
+  }
+  
+  // Legacy approach using ScriptProcessorNode (with deprecation warning)
+  function initLegacyNoiseGenerator() {
+    console.warn("Using deprecated ScriptProcessorNode. This will be removed in future browser versions.");
+    
+    const bufferSize = 4096;
+    const noiseNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+    
+    // Generate white noise
+    noiseNode.onaudioprocess = function(e) {
+      const output = e.outputBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+    };
+    
+    // Create filter to shape noise into more "radio static" sound
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1000;
+    filter.Q.value = 0.5;
+    
+    // Connect nodes
+    noiseNode.connect(filter);
+    filter.connect(staticGainNode);
+    staticGainNode.connect(audioContext.destination);
+    
+    // Keep reference to nodes to prevent garbage collection
+    window.noiseNode = noiseNode;
+    window.staticFilter = filter;
+  }
+  
+  // Add message to the conversation log
+  function addMessage(sender, text, type) {
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}`;
+    
+    const messageInfo = document.createElement('div');
+    messageInfo.className = 'message-info';
+    messageInfo.textContent = `${sender} | ${new Date().toLocaleTimeString()}`;
+    
+    const messageText = document.createElement('div');
+    messageText.className = 'message-text';
+    messageText.textContent = text;
+    
+    messageDiv.appendChild(messageInfo);
+    messageDiv.appendChild(messageText);
+    
+    messagesElement.appendChild(messageDiv);
+    
+    // Auto-scroll to bottom
+    messagesElement.scrollTop = messagesElement.scrollHeight;
+  }
+  
+  // Handle push-to-talk
+  function setupPushToTalk() {
+    // For mobile devices
+    pushToTalkButton.addEventListener('touchstart', startTransmitting);
+    pushToTalkButton.addEventListener('touchend', stopTransmitting);
+    
+    // For desktop/laptop testing
+    pushToTalkButton.addEventListener('mousedown', startTransmitting);
+    pushToTalkButton.addEventListener('mouseup', stopTransmitting);
+    pushToTalkButton.addEventListener('mouseleave', stopTransmitting);
+    
+    // Keyboard support (space bar)
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && !isTransmitting && !e.repeat && 
+          document.activeElement !== pairingCodeInput) {
+        e.preventDefault();
+        startTransmitting(e);
+      }
+    });
+    
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && isTransmitting) {
+        e.preventDefault();
+        stopTransmitting(e);
+      }
+    });
+  }
+  
+  // Initialize speech recognition
+  function initSpeechRecognition() {
+    // Check browser support
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      addMessage('SYSTEM', 'Speech recognition not supported in this browser. Using text input instead.', 'system');
+      return false;
+    }
+    
+    // Create speech recognition object
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    speechRecognition = new SpeechRecognition();
+    
+    // Configure
+    speechRecognition.continuous = false;
+    speechRecognition.interimResults = false;
+    speechRecognition.lang = 'en-US';
+    
+    // Set up event handlers
+    speechRecognition.onresult = function(event) {
+      const transcript = event.results[0][0].transcript;
+      console.log('Recognized speech:', transcript);
+      
+      // Show in message log
+      addMessage('YOU', transcript, 'user');
+      
+      // Send to server
+      if (socket && transcript.trim() !== '') {
+        socket.emit('audio_message', { message: transcript });
+      }
+    };
+    
+    speechRecognition.onerror = function(event) {
+      console.error('Speech recognition error:', event.error);
+      addMessage('SYSTEM', `Speech recognition error: ${event.error}`, 'system');
+    };
+    
+    return true;
+  }
+  
+  // Initialize audio recording
+  async function initAudioRecording() {
+    try {
+      // Request microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Create media recorder
+      mediaRecorder = new MediaRecorder(stream);
+      
+      // Set up event handlers
+      mediaRecorder.ondataavailable = function(event) {
+        audioChunks.push(event.data);
+      };
+      
+      mediaRecorder.onstop = async function() {
+        // Create audio blob from chunks
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        
+        // Clear chunks for next recording
+        audioChunks = [];
+      };
+      
+      return true;
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      addMessage('SYSTEM', 'Could not access microphone. Please check permissions.', 'system');
+      return false;
+    }
+  }
+  
+  // Start audio transmission
+  async function startTransmitting(e) {
+    e.preventDefault();
+    
+    if (!isPaired || !isFrequencyActive || isTransmitting) {
+      console.log("Cannot transmit: ", {isPaired, isFrequencyActive, isTransmitting});
+      return;
+    }
+    
+    isTransmitting = true;
+    pushToTalkButton.classList.add('active');
+    document.querySelector('.transmission-indicator').classList.add('active');
+    
+    console.log("Starting transmission...");
+    
+    // Lower static volume during transmission
+    if (staticGainNode) {
+      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+      staticGainNode.gain.linearRampToValueAtTime(0.05, audioContext.currentTime + 0.2);
+    }
+    
+    // Play radio start sound
+    playTransmissionSound('start');
+    
+    // Start recording audio
+    if (mediaRecorder && mediaRecorder.state === 'inactive') {
+      audioChunks = [];
+      mediaRecorder.start();
+    }
+    
+    // Start speech recognition
+    if (speechRecognition) {
+      try {
+        speechRecognition.start();
+      } catch (error) {
+        console.error('Speech recognition start error:', error);
+      }
+    } else {
+      // Fallback to text input for unsupported browsers
+      const userMessage = prompt('Enter your message:');
+      
+      if (userMessage && userMessage.trim() !== '') {
+        console.log("Sending message:", userMessage);
+        addMessage('YOU', userMessage, 'user');
+        
+        if (socket) {
+          socket.emit('audio_message', { message: userMessage });
+        }
+      }
+    }
+  }
+  
+  // Create radio voice effect
+  function createRadioVoiceEffect(audioElement) {
+    const source = audioContext.createMediaElementSource(audioElement);
+    
+    // Create filter nodes for radio effect
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 2000;
+    
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 500;
+    
+    // Create distortion for radio "crunch"
+    const distortion = audioContext.createWaveShaper();
+    distortion.curve = createDistortionCurve(100);
+    distortion.oversample = '4x';
+    
+    // Connect the nodes
+    source.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(distortion);
+    distortion.connect(audioContext.destination);
+    
+    return source;
+  }
+  
+  // Helper function to create distortion curve
+  function createDistortionCurve(amount) {
+    const samples = 44100;
+    const curve = new Float32Array(samples);
+    const deg = Math.PI / 180;
+    
+    for (let i = 0; i < samples; i++) {
+      const x = (i * 2) / samples - 1;
+      curve[i] = (3 + amount) * x * 20 * deg / (Math.PI + amount * Math.abs(x));
+    }
+    
+    return curve;
+  }
+  
+  // Stop audio transmission
+  function stopTransmitting(e) {
+    e.preventDefault();
+    
+    if (!isTransmitting) return;
+    
+    isTransmitting = false;
+    pushToTalkButton.classList.remove('active');
+    document.querySelector('.transmission-indicator').classList.remove('active');
+    
+    // Play radio end sound
+    playTransmissionSound('end');
+    
+    // Stop recording
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop();
+    }
+    
+    // Stop speech recognition
+    if (speechRecognition) {
+      try {
+        speechRecognition.stop();
+      } catch (error) {
+        console.error('Speech recognition stop error:', error);
+      }
+    }
+    
+    // Restore static volume
+    if (staticGainNode) {
+      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+      staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.3);
+    }
+  }
+  
+  // Play radio transmission start/end sounds
+  function playTransmissionSound(type) {
+    // Use existing audioContext instead of creating a new one
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    if (type === 'start') {
+      // Radio "click" sound at start
+      oscillator.frequency.value = 1000;
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      oscillator.start();
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+      setTimeout(() => oscillator.stop(), 100);
+    } else {
+      // Radio "click" sound at end
+      oscillator.frequency.value = 800;
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      oscillator.start();
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+      setTimeout(() => oscillator.stop(), 100);
+    }
+  }
+  
+  // Handle pairing
+  function setupPairing() {
+    pairButton.addEventListener('click', () => {
+      const code = pairingCodeInput.value.trim();
+      
+      if (code && socket) {
+        socket.emit('pair', { pairing_code: code });
+        addMessage('SYSTEM', 'Attempting to pair with code: ' + code, 'system');
+      }
+    });
+  }
+  
+  // Function to play generated audio with radio effects
+  function playGeneratedAudio(audioPath) {
+    // Create audio element
+    const audioElement = new Audio(audioPath);
+    
+    // Prepare audio nodes
+    const source = audioContext.createMediaElementSource(audioElement);
+    
+    // Create radio effect filter chain
+    const bandpass = audioContext.createBiquadFilter();
+    bandpass.type = "bandpass";
+    bandpass.frequency.value = 1800;
+    bandpass.Q.value = 0.7;
+    
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 500;
+    
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 2500;
+    
+    // Create distortion for radio "crunch"
+    const distortion = audioContext.createWaveShaper();
+    distortion.curve = createDistortionCurve(20);
+    distortion.oversample = "4x";
+    
+    // Lower static volume during speech
+    if (staticGainNode) {
+      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+      staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.2);
+    }
+    
+    // Connect nodes
+    source.connect(bandpass);
+    bandpass.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(distortion);
+    distortion.connect(audioContext.destination);
+    
+    // Play audio
+    audioElement.play();
+    
+    // Restore static volume when finished
+    audioElement.onended = function() {
+      if (staticGainNode) {
+        adjustStaticVolume();
+      }
+    };
+  }
+  
+  // Initialize the application
+  function init() {
+    // Add transmission indicator
+    const transmissionIndicator = document.createElement('div');
+    transmissionIndicator.className = 'transmission-indicator';
+    document.querySelector('.walkie-talkie').appendChild(transmissionIndicator);
+
+    // Check for browser compatibility
+    const compatibilityCheck = {
+      audioContext: !!(window.AudioContext || window.webkitAudioContext),
+      mediaDevices: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
+      speechRecognition: !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+    };
+
+    // Log compatibility
+    console.log('Browser compatibility:', compatibilityCheck);
+
+    // Warn if features are missing
+    if (!compatibilityCheck.audioContext || !compatibilityCheck.mediaDevices) {
+      addMessage('SYSTEM', 'Warning: Your browser may not support all audio features. Consider using Chrome for best experience.', 'system');
+    }
+
+    if (!compatibilityCheck.speechRecognition) {
+      addMessage('SYSTEM', 'Speech recognition not available. Will use text input instead.', 'system');
+    }
+
+    // Add initial system message
+    addMessage('SYSTEM', 'Walkie-talkie initialized. Connecting to server...', 'system');
+    
+    // Initialize WebSocket connection
+    connectSocket();
+    
+    // Set up pairing button handler
+    setupPairing();
+    
+    // Set up push-to-talk
+    setupPushToTalk();
+    
+    // Initialize audio on first user interaction
+    document.addEventListener('click', () => {
+      if (!audioContext) {
+        initAudio();
+        addMessage('SYSTEM', 'Audio initialized', 'system');
+      }
+    }, { once: true });
+    
+    // Initially disable push-to-talk until paired and on active frequency
+    pushToTalkButton.disabled = true;
+    
+    // Add these lines
+    addMessage('SYSTEM', 'Initializing audio system...', 'system');
+    
+    // Request permissions early
+    const permissionButton = document.createElement('button');
+    permissionButton.textContent = 'Enable Microphone';
+    permissionButton.className = 'permission-button';
+    permissionButton.onclick = async () => {
+      const audioInit = await initAudioRecording();
+      const speechInit = initSpeechRecognition();
+      
+      if (audioInit && speechInit) {
+        addMessage('SYSTEM', 'Voice transmission ready.', 'system');
+        permissionButton.style.display = 'none';
+      } else {
+        addMessage('SYSTEM', 'Using text input as fallback.', 'system');
+      }
+    };
+    document.body.appendChild(permissionButton);
+  }
+  
+  // Start the application
+  init();
+});
