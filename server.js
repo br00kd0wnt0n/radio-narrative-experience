@@ -11,6 +11,19 @@ const elevenLabs = require('elevenlabs-js');
 // Set your API key
 elevenLabs.setApiKey(process.env.ELEVENLABS_API_KEY);
 
+// Define voice IDs for each character
+const voiceIds = {
+  'Commander': '21m00Tcm4TlvDq8ikWAM', // Rachel - authoritative female voice
+  'Scientist': 'AZnzlk1XvdvUeBnXmlld', // Domi - intelligent female voice
+  'Survivor': 'EXAVITQu4vr4xnSDxMaL',  // Elli - emotional female voice
+  'Spy': 'MF3mGyEYCl7XYWbV9V6O',       // Josh - mysterious male voice
+  'Pilot': 'pNInz6obpgDQGcFmaJgB',     // Adam - professional male voice
+  'Security Officer': 'yoZ06aMxZJJ28mfd3POQ', // Sam - authoritative male voice
+  'Doctor': 'flq6f7yk4E4fJM5XTYuZ',    // Nicole - caring female voice
+  'Engineer': 'jsCqWAovK2LkecY7zXl4',   // Antoni - technical male voice
+  'Director': 'onwK4e9ZLuTAKqWW03F9'    // Matilda - commanding female voice
+};
+
 // Create Express app
 const app = express();
 
