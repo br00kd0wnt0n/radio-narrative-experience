@@ -1,8 +1,6 @@
 // server.js
 const express = require('express');
 const http = require('http');
-const https = require('https');
-const fs = require('fs');
 const socketIo = require('socket.io');
 const path = require('path');
 const cors = require('cors');
@@ -39,20 +37,9 @@ app.get('/mobile', (req, res) => {
   res.sendFile(__dirname + '/public/mobile/index.html');
 });
 
-// Setup HTTPS server
-let server;
-try {
-  const options = {
-    key: fs.readFileSync('./certificates/key.pem'),
-    cert: fs.readFileSync('./certificates/cert.pem')
-  };
-  server = https.createServer(options, app);
-  console.log('HTTPS server created successfully');
-} catch (error) {
-  console.error('Failed to create HTTPS server:', error);
-  console.log('Falling back to HTTP server');
-  server = http.createServer(app);
-}
+// Create HTTP server (Railway will provide HTTPS)
+const server = http.createServer(app);
+console.log('HTTP server created (Railway will provide HTTPS)');
 
 // Initialize Socket.IO with the server
 const io = socketIo(server);
@@ -919,16 +906,27 @@ app.post('/upload-audio', (req, res) => {
 
 // Start the server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-  // Get local IP address
-  const { networkInterfaces } = require('os');
-  const nets = networkInterfaces();
-  const localIP = Object.values(nets)
-    .flat()
-    .find(ip => ip.family === 'IPv4' && !ip.internal)?.address || 'localhost';
+const isProduction = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_SERVICE_NAME;
 
-  const protocol = server instanceof https.Server ? 'https' : 'http';
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Desktop interface: ${protocol}://localhost:${PORT}/desktop`);
-  console.log(`Mobile interface: ${protocol}://${localIP}:${PORT}/mobile`);
+  
+  if (isProduction) {
+    // We're on Railway, use the public URL
+    const baseUrl = process.env.RAILWAY_STATIC_URL || 'your Railway URL';
+    console.log(`App deployed! Access it at ${baseUrl}`);
+    console.log(`Desktop interface: ${baseUrl}/desktop`);
+    console.log(`Mobile interface: ${baseUrl}/mobile`);
+  } else {
+    // Local development
+    const { networkInterfaces } = require('os');
+    const nets = networkInterfaces();
+    const localIP = Object.values(nets)
+      .flat()
+      .find(ip => ip.family === 'IPv4' && !ip.internal)?.address || 'localhost';
+
+    const protocol = server instanceof https.Server ? 'https' : 'http';
+    console.log(`Desktop interface: ${protocol}://localhost:${PORT}/desktop`);
+    console.log(`Mobile interface: ${protocol}://${localIP}:${PORT}/mobile`);
+  }
 });
