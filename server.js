@@ -195,6 +195,37 @@ const frequencies = {
   }
 };
 
+// Define standard message formats
+const messageFormats = {
+  characterResponse: (character, message, stage) => ({
+    type: 'character_response',
+    data: {
+      character,
+      message,
+      stage,
+      timestamp: Date.now()
+    }
+  }),
+  
+  error: (message, details = null) => ({
+    type: 'error',
+    data: {
+      message,
+      details,
+      timestamp: Date.now()
+    }
+  }),
+  
+  status: (status, details = {}) => ({
+    type: 'status',
+    data: {
+      status,
+      ...details,
+      timestamp: Date.now()
+    }
+  })
+};
+
 // WebSocket connection handling
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id, 'from', socket.handshake.address);
@@ -314,80 +345,99 @@ io.on('connection', (socket) => {
   
   // Handle audio messages from mobile
   socket.on('audio_message', async (data) => {
-    const mobile = mobileClients.get(socket.id);
-    if (!mobile || !mobile.paired_desktop) return;
-    
-    const desktop = desktopClients.get(mobile.paired_desktop);
-    if (!desktop) return;
-    
-    // Get current frequency data
-    const frequency = desktop.current_frequency;
-    const frequencyData = frequencies[frequency];
-    
-    if (frequencyData) {
-      try {
-        const userMessage = data.message;
-        const character = frequencyData.character;
-        
-        // Check for key information in the user's message
-        checkForKeyInformation(userMessage, character);
-        
-        // Initialize character state if first contact
-        if (!narrativeState.characterStates.has(character)) {
-          narrativeState.characterStates.set(character, {
-            stage: 'introduction',
-            interactionCount: 0,
-            keyInfoRevealed: false
-          });
-          narrativeState.discoveredCharacters.add(character);
-        }
-        
-        // Update character state
-        const charState = narrativeState.characterStates.get(character);
-        charState.interactionCount++;
-        
-        // Progress narrative stages based on interaction count and discoveries
-        if (charState.interactionCount >= 3 && charState.stage === 'introduction') {
-          charState.stage = 'revelation';
-        } else if (charState.interactionCount >= 6 && charState.stage === 'revelation') {
-          charState.stage = 'crisis';
-        }
-        
-        // Advance global narrative if conditions are met
-        if (narrativeState.discoveredCharacters.size >= 3 && narrativeState.globalStage === 'discovery') {
-          narrativeState.globalStage = 'crisis';
-          // Broadcast global event to all connected characters
-          broadcastNarrativeEvent('crisis');
-        }
-        
-        // Generate AI response with narrative context
-        const aiResponse = await generateAIResponse(
-          userMessage, 
-          character, 
-          frequencyData.context,
-          charState.stage,
-          narrativeState.globalStage
-        );
-        
-        // Send the AI response back to both desktop and mobile
-        desktop.socket.emit('ai_response', { 
-          message: aiResponse.text,
-          character: frequencyData.character,
-          audioPath: aiResponse.audioPath,
-          narrativeStage: charState.stage
-        });
-        
-        socket.emit('ai_response', { 
-          message: aiResponse.text,
-          character: frequencyData.character,
-          audioPath: aiResponse.audioPath,
-          narrativeStage: charState.stage
-        });
-        
-      } catch (error) {
-        console.error('Error processing audio message:', error);
-        socket.emit('error', { message: 'Failed to process audio' });
+    try {
+      // Validate message format
+      if (!data || typeof data.message !== 'string' || data.message.trim() === '') {
+        console.error('Invalid message format received:', data);
+        const errorMessage = messageFormats.error('Invalid message format');
+        socket.emit(errorMessage.type, errorMessage.data);
+        return;
       }
+
+      const mobile = mobileClients.get(socket.id);
+      if (!mobile || !mobile.paired_desktop) {
+        console.error('Unpaired mobile client attempted to send message');
+        const errorMessage = messageFormats.error('Not paired with desktop');
+        socket.emit(errorMessage.type, errorMessage.data);
+        return;
+      }
+      
+      const desktop = desktopClients.get(mobile.paired_desktop);
+      if (!desktop) {
+        console.error('Paired desktop client not found');
+        const errorMessage = messageFormats.error('Desktop client not found');
+        socket.emit(errorMessage.type, errorMessage.data);
+        return;
+      }
+      
+      // Get current frequency data
+      const frequency = desktop.current_frequency;
+      const frequencyData = frequencies[frequency];
+      
+      if (!frequencyData) {
+        console.error('No active frequency for message');
+        const errorMessage = messageFormats.error('No active frequency');
+        socket.emit(errorMessage.type, errorMessage.data);
+        return;
+      }
+
+      const userMessage = data.message.trim();
+      const character = frequencyData.character;
+      
+      console.log(`Processing message from ${socket.id} to ${character}: "${userMessage}"`);
+      
+      // Check for key information in the user's message
+      const keyInfo = checkForKeyInformation(userMessage, character);
+      if (keyInfo) {
+        console.log(`Key information discovered: ${keyInfo} by ${character}`);
+      }
+
+      // Initialize character state if first contact
+      if (!narrativeState.characterStates.has(character)) {
+        console.log(`Initializing state for character: ${character}`);
+        narrativeState.characterStates.set(character, {
+          interactionCount: 0,
+          stage: 'introduction',
+          lastInteraction: Date.now()
+        });
+        narrativeState.discoveredCharacters.add(character);
+      }
+      
+      // Update character state
+      const characterState = narrativeState.characterStates.get(character);
+      characterState.interactionCount++;
+      characterState.lastInteraction = Date.now();
+      
+      // Progress narrative stage based on interaction count
+      if (characterState.interactionCount >= 3 && characterState.stage === 'introduction') {
+        console.log(`Progressing ${character} to discovery stage`);
+        characterState.stage = 'discovery';
+      } else if (characterState.interactionCount >= 6 && characterState.stage === 'discovery') {
+        console.log(`Progressing ${character} to crisis stage`);
+        characterState.stage = 'crisis';
+      }
+      
+      // Advance global narrative if conditions are met
+      if (narrativeState.discoveredCharacters.size >= 3 && narrativeState.globalStage === 'discovery') {
+        narrativeState.globalStage = 'crisis';
+        // Broadcast global event to all connected characters
+        broadcastNarrativeEvent('crisis');
+      }
+      
+      // Generate AI response
+      const response = await generateAIResponse(userMessage, character, characterState.stage);
+      console.log(`Generated response for ${character}: "${response}"`);
+
+      // Send response back to both clients using standardized format
+      const responseMessage = messageFormats.characterResponse(character, response, characterState.stage);
+      
+      desktop.socket.emit(responseMessage.type, responseMessage.data);
+      socket.emit(responseMessage.type, responseMessage.data);
+      
+    } catch (error) {
+      console.error('Error processing audio message:', error);
+      const errorMessage = messageFormats.error('Failed to process audio', error.message);
+      socket.emit(errorMessage.type, errorMessage.data);
     }
   });
   
@@ -420,6 +470,14 @@ io.on('connection', (socket) => {
       }
       mobileClients.delete(socket.id);
     }
+
+    const statusMessage = messageFormats.status('disconnected', { socketId: socket.id });
+    io.emit(statusMessage.type, statusMessage.data);
+  });
+
+  socket.on('connect', () => {
+    const statusMessage = messageFormats.status('connected', { socketId: socket.id });
+    io.emit(statusMessage.type, statusMessage.data);
   });
 });
 
@@ -474,55 +532,63 @@ function checkForKeyInformation(message, character) {
   if ((character === 'Scientist' || character === 'Engineer') && 
       (lowerMsg.includes('experiment') || lowerMsg.includes('test') || lowerMsg.includes('research'))) {
     narrativeState.discoveredInfo.experiment = true;
+    return 'experiment';
   }
   
   // Breach information
   if ((character === 'Commander' || character === 'Security Officer') && 
       (lowerMsg.includes('breach') || lowerMsg.includes('containment') || lowerMsg.includes('security'))) {
     narrativeState.discoveredInfo.breach = true;
+    return 'breach';
   }
   
   // Creature information
   if ((character === 'Survivor' || character === 'Security Officer') && 
       (lowerMsg.includes('creature') || lowerMsg.includes('monster') || lowerMsg.includes('entity'))) {
     narrativeState.discoveredInfo.creature = true;
+    return 'creature';
   }
   
   // Evacuation information
   if ((character === 'Commander' || character === 'Pilot') && 
       (lowerMsg.includes('evacuate') || lowerMsg.includes('extraction') || lowerMsg.includes('rescue'))) {
     narrativeState.discoveredInfo.evacuation = true;
+    return 'evacuation';
   }
   
   // Government involvement
   if ((character === 'Spy' || character === 'Scientist') && 
       (lowerMsg.includes('government') || lowerMsg.includes('classified') || lowerMsg.includes('project'))) {
     narrativeState.discoveredInfo.government = true;
+    return 'government';
   }
   
   // Containment issues
   if ((character === 'Scientist' || character === 'Engineer') && 
       (lowerMsg.includes('containment') || lowerMsg.includes('field') || lowerMsg.includes('barrier'))) {
     narrativeState.discoveredInfo.containment = true;
+    return 'containment';
   }
   
   // Radiation effects
   if ((character === 'Scientist' || character === 'Doctor') && 
       (lowerMsg.includes('radiation') || lowerMsg.includes('exposure') || lowerMsg.includes('effects'))) {
     narrativeState.discoveredInfo.radiation = true;
+    return 'radiation';
   }
   
   // Mutation information
   if ((character === 'Survivor' || character === 'Doctor') && 
       (lowerMsg.includes('mutation') || lowerMsg.includes('change') || lowerMsg.includes('transform'))) {
     narrativeState.discoveredInfo.mutation = true;
+    return 'mutation';
   }
 }
 
 // Update the generateAIResponse function
-async function generateAIResponse(userMessage, character, context, characterStage, globalStage) {
+async function generateAIResponse(userMessage, character, characterStage) {
   try {
-    console.log(`Generating response for ${character} in ${characterStage} stage, global: ${globalStage}`);
+    console.log(`Generating response for ${character} in ${characterStage} stage`);
     
     // Check for cross-character references (30% chance)
     if (Math.random() < 0.3) {
