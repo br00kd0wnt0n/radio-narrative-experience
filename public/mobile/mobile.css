@@ -37,4 +37,24 @@
   0% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
   70% { box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
   100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+}
+
+.mic-indicator {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  padding: 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 1000;
+}
+
+.mic-indicator.active {
+  background-color: #4caf50;
+  color: white;
+}
+
+.mic-indicator.error {
+  background-color: #f44336;
+  color: white;
 } 

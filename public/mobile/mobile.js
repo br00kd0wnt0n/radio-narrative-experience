@@ -55,6 +55,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add system message
         addMessage('SYSTEM', 'Paired with desktop device', 'system');
+        
+        // Check microphone access
+        checkMicrophoneAccess();
       } else {
         statusElement.textContent = 'Pairing failed';
         statusElement.style.color = '#f44336';
@@ -594,6 +597,38 @@ document.addEventListener('DOMContentLoaded', function() {
         adjustStaticVolume();
       }
     };
+  }
+  
+  // Add microphone status check function
+  function checkMicrophoneAccess() {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        addMessage('SYSTEM', 'Microphone access granted!', 'system');
+        console.log('Microphone stream obtained:', stream);
+        
+        // Show active tracks
+        const tracks = stream.getAudioTracks();
+        console.log('Audio tracks:', tracks.length);
+        tracks.forEach(track => {
+          console.log('Track:', track.label, 'Active:', track.enabled);
+        });
+        
+        // Display a mic indicator
+        const indicator = document.createElement('div');
+        indicator.className = 'mic-indicator active';
+        indicator.textContent = 'MIC ON';
+        document.body.appendChild(indicator);
+      })
+      .catch(error => {
+        addMessage('SYSTEM', 'Microphone error: ' + error.message, 'system');
+        console.error('Microphone access error:', error);
+        
+        // Display error indicator
+        const indicator = document.createElement('div');
+        indicator.className = 'mic-indicator error';
+        indicator.textContent = 'MIC ERROR';
+        document.body.appendChild(indicator);
+      });
   }
   
   // Initialize the application
