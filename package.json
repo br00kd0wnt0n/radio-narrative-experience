@@ -20,12 +20,10 @@
   "homepage": "https://github.com/yourusername/radio-narrative-experience#readme",
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^16.5.0",
-    "elevenlabs": "^1.57.0",
-    "elevenlabs-js": "^1.2.6",
-    "elevenlabs-node": "^2.0.3",
-    "express": "^5.1.0",
-    "openai": "^4.28.0",
-    "socket.io": "^4.8.1"
+    "dotenv": "^16.0.3",
+    "elevenlabs-js": "^1.0.0",
+    "express": "^4.18.2",
+    "openai": "^4.0.0",
+    "socket.io": "^4.6.1"
   }
 }
