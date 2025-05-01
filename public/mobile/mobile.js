@@ -549,6 +549,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Start audio transmission
   async function startTransmitting(e) {
     e.preventDefault();
+    e.stopPropagation(); // Prevent text selection
     
     if (!isPaired || !isFrequencyActive || isTransmitting) {
       console.log("Cannot transmit: ", {isPaired, isFrequencyActive, isTransmitting});
@@ -557,7 +558,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     isTransmitting = true;
     pushToTalkButton.classList.add('active');
-    document.querySelector('.transmission-indicator').classList.add('active');
     
     // Play button sound instead of static
     playButtonSound('start');
@@ -571,36 +571,116 @@ document.addEventListener('DOMContentLoaded', function() {
     // Request microphone access
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log("Microphone access granted:", stream);
       
       // Start visualizer
       startAudioVisualization(stream);
       
       // Start speech recognition
-      if (speechRecognition) {
+      if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        // Create new instance each time to avoid issues
+        speechRecognition = new SpeechRecognition();
+        speechRecognition.continuous = false;
+        speechRecognition.interimResults = true;
+        speechRecognition.maxAlternatives = 3;
+        speechRecognition.lang = 'en-US';
+        
+        // Set up event handlers
+        speechRecognition.onstart = function() {
+          console.log("Speech recognition started");
+          document.querySelector('.speech-status').textContent = 'Listening...';
+          document.querySelector('.speech-status').className = 'speech-status active';
+        };
+        
+        speechRecognition.onresult = function(event) {
+          console.log("Speech recognition result:", event);
+          const speechText = document.querySelector('.speech-text');
+          
+          // Get the transcript
+          let interimTranscript = '';
+          let finalTranscript = '';
+          
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+          
+          // Display interim results
+          if (interimTranscript) {
+            speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
+          }
+          
+          // Process final results
+          if (finalTranscript) {
+            speechText.textContent = finalTranscript;
+            
+            // Send the final transcript
+            if (finalTranscript.trim() !== '') {
+              addMessage('YOU', finalTranscript, 'user');
+              
+              if (socket) {
+                socket.emit('audio_message', { message: finalTranscript });
+                console.log("Sent recognized message:", finalTranscript);
+              }
+            }
+          }
+        };
+        
+        speechRecognition.onerror = function(event) {
+          console.error('Speech recognition error:', event.error);
+          document.querySelector('.speech-status').textContent = `Error: ${event.error}`;
+          document.querySelector('.speech-status').className = 'speech-status error';
+          
+          // Add fallback message to user
+          addMessage('SYSTEM', `Speech recognition error: ${event.error}. Try using text input below.`, 'system');
+        };
+        
+        speechRecognition.onend = function() {
+          console.log("Speech recognition ended");
+          if (!isTransmitting) {
+            document.querySelector('.speech-status').textContent = 'Ready';
+            document.querySelector('.speech-status').className = 'speech-status';
+          }
+        };
+        
         try {
           speechRecognition.start();
+          console.log("Speech recognition started successfully");
         } catch (error) {
-          console.error('Speech recognition start error:', error);
+          console.error('Failed to start speech recognition:', error);
+          fallbackToTextInput();
         }
       } else {
-        // Fallback to text input
-        const userMessage = prompt('Enter your message:');
-        
-        if (userMessage && userMessage.trim() !== '') {
-          console.log("Sending message:", userMessage);
-          addMessage('YOU', userMessage, 'user');
-          
-          if (socket) {
-            socket.emit('audio_message', { message: userMessage });
-          }
-        }
+        console.warn("Speech recognition not supported by this browser");
+        fallbackToTextInput();
       }
     } catch (error) {
       console.error('Microphone access error:', error);
       addMessage('SYSTEM', `Microphone error: ${error.message}`, 'system');
       isTransmitting = false;
       pushToTalkButton.classList.remove('active');
-      document.querySelector('.transmission-indicator').classList.remove('active');
+      fallbackToTextInput();
+    }
+  }
+  
+  // Helper function to fallback to text input
+  function fallbackToTextInput() {
+    // Prompt for text input
+    const userMessage = prompt('Enter your message:');
+    
+    if (userMessage && userMessage.trim() !== '') {
+      console.log("Sending fallback message:", userMessage);
+      addMessage('YOU', userMessage, 'user');
+      
+      if (socket) {
+        socket.emit('audio_message', { message: userMessage });
+      }
     }
   }
   
@@ -818,6 +898,27 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
+  // Add this function to mobile.js
+  function initSpeechUI() {
+    // Create speech display if it doesn't exist
+    if (!document.querySelector('.speech-display')) {
+      const speechDisplay = document.createElement('div');
+      speechDisplay.className = 'speech-display';
+      speechDisplay.innerHTML = '<div class="speech-text"></div><div class="speech-status">Ready</div>';
+      
+      // Find the right place to insert it
+      const walkieTalkie = document.querySelector('.walkie-talkie');
+      if (walkieTalkie) {
+        const controls = document.querySelector('.controls');
+        if (controls) {
+          walkieTalkie.insertBefore(speechDisplay, controls);
+        } else {
+          walkieTalkie.appendChild(speechDisplay);
+        }
+      }
+    }
+  }
+  
   // Initialize the application
   function init() {
     // Add transmission indicator
@@ -886,6 +987,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     };
     document.body.appendChild(permissionButton);
+    
+    // Initialize speech UI
+    initSpeechUI();
   }
   
   // Start the application

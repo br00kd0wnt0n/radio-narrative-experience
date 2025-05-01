@@ -140,38 +140,12 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       
-      // Check if static audio element exists and is valid
-      if (!staticAudio || staticAudio.error) {
-        console.error('Static audio element not found or has error');
-        return;
-      }
+      // Create gain node for volume control
+      staticGainNode = audioContext.createGain();
+      staticGainNode.gain.value = 0.7;
       
-      try {
-        // Correct way to connect an audio element 
-        const source = audioContext.createMediaElementSource(staticAudio);
-        
-        // Create gain node for volume control
-        staticGainNode = audioContext.createGain();
-        staticGainNode.gain.value = 0.7;
-        
-        // Create a filter for the static
-        window.staticFilterNode = audioContext.createBiquadFilter();
-        window.staticFilterNode.type = 'bandpass';
-        window.staticFilterNode.frequency.value = 1000;
-        window.staticFilterNode.Q.value = 0.5;
-        
-        // Connect nodes
-        source.connect(window.staticFilterNode);
-        window.staticFilterNode.connect(staticGainNode);
-        staticGainNode.connect(audioContext.destination);
-        
-        // Start playing static
-        staticAudio.play().catch(e => {
-          console.error('Could not play static audio:', e);
-        });
-      } catch (audioError) {
-        console.error('Error initializing audio:', audioError);
-      }
+      // Create a noise generator for continuous static
+      createNoiseGenerator();
       
       // Initialize visualizer after short delay
       setTimeout(() => {
@@ -187,90 +161,49 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  // Modern approach using AudioWorkletNode
-  async function initAudioWorklet() {
+  // Function to create a noise generator for static
+  function createNoiseGenerator() {
     try {
-      // We need to create and load a worklet processor
-      const workletBlob = new Blob([`
-        class NoiseGenerator extends AudioWorkletProcessor {
-          process(inputs, outputs) {
-            const output = outputs[0];
-            
-            for (let channel = 0; channel < output.length; ++channel) {
-              const outputChannel = output[channel];
-              for (let i = 0; i < outputChannel.length; ++i) {
-                // Generate white noise
-                outputChannel[i] = Math.random() * 2 - 1;
-              }
-            }
-            
-            // Return true to keep the processor alive
-            return true;
-          }
+      // Use modern AudioWorklet if available
+      if (window.AudioWorkletNode && audioContext.audioWorklet) {
+        // This is a more modern approach but requires more setup
+        // For simplicity, we'll use the older method with a note about the deprecation
+        console.log("AudioWorkletNode is supported but using ScriptProcessor for compatibility");
+      }
+      
+      // Create a ScriptProcessorNode
+      const bufferSize = 4096;
+      const noiseNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+      
+      // Generate white noise
+      noiseNode.onaudioprocess = function(e) {
+        const output = e.outputBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          // Generate white noise
+          output[i] = Math.random() * 2 - 1;
         }
-        
-        registerProcessor('noise-generator', NoiseGenerator);
-      `], { type: 'application/javascript' });
-      
-      const workletURL = URL.createObjectURL(workletBlob);
-      
-      // Load the worklet processor
-      await audioContext.audioWorklet.addModule(workletURL);
-      
-      // Create noise generator
-      const noiseNode = new AudioWorkletNode(audioContext, 'noise-generator');
+      };
       
       // Create filter to shape noise into more "radio static" sound
-      const filter = audioContext.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 1000;
-      filter.Q.value = 0.5;
+      window.staticFilterNode = audioContext.createBiquadFilter();
+      window.staticFilterNode.type = 'bandpass';
+      window.staticFilterNode.frequency.value = 1000;
+      window.staticFilterNode.Q.value = 0.5;
       
       // Connect nodes
-      noiseNode.connect(filter);
-      filter.connect(staticGainNode);
+      noiseNode.connect(window.staticFilterNode);
+      window.staticFilterNode.connect(staticGainNode);
       staticGainNode.connect(audioContext.destination);
       
-      console.log("Using modern AudioWorkletNode for noise generation");
+      // Keep reference to nodes to prevent garbage collection
+      window.noiseNode = noiseNode;
       
-      // Clean up the blob URL
-      URL.revokeObjectURL(workletURL);
+      console.log("Continuous static generator initialized");
+      return true;
     } catch (error) {
-      console.error("Error initializing AudioWorklet:", error);
-      // Fall back to legacy method if AudioWorklet fails
-      initLegacyNoiseGenerator();
+      console.error("Error creating noise generator:", error);
+      return false;
     }
-  }
-
-  // Legacy approach using ScriptProcessorNode (with deprecation warning)
-  function initLegacyNoiseGenerator() {
-    console.warn("Using deprecated ScriptProcessorNode. This will be removed in future browser versions.");
-    
-    const bufferSize = 4096;
-    const noiseNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
-    
-    // Generate white noise
-    noiseNode.onaudioprocess = function(e) {
-      const output = e.outputBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
-      }
-    };
-    
-    // Create filter to shape noise into more "radio static" sound
-    const filter = audioContext.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 1000;
-    filter.Q.value = 0.5;
-    
-    // Connect nodes
-    noiseNode.connect(filter);
-    filter.connect(staticGainNode);
-    staticGainNode.connect(audioContext.destination);
-    
-    // Keep reference to nodes to prevent garbage collection
-    window.noiseNode = noiseNode;
-    window.staticFilter = filter;
   }
   
   // Update the frequency display

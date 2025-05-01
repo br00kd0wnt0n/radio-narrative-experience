@@ -106,4 +106,24 @@
   height: 40px;
   background-color: #333;
   border-radius: 4px;
+}
+
+.push-to-talk {
+  width: 80%;
+  height: 80px;
+  background-color: #f44336;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  color: white;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  font-family: 'Courier New', monospace;
+  user-select: none; /* Prevent text selection */
+  -webkit-user-select: none; /* For Safari */
+  -moz-user-select: none; /* For Firefox */
+  -ms-user-select: none; /* For IE/Edge */
 } 
