@@ -331,8 +331,11 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Add message to the conversation log
   function addMessage(character, message, type = 'system') {
-    const transmissionLog = document.getElementById('transmission-log');
-    if (!transmissionLog) return;
+    const messagesElement = document.getElementById('messages');
+    if (!messagesElement) {
+      console.error('Messages element not found');
+      return;
+    }
 
     const messageElement = document.createElement('div');
     messageElement.className = `message ${type}`;
@@ -363,8 +366,8 @@ document.addEventListener('DOMContentLoaded', function() {
     messageText.textContent = formattedMessage;
     messageElement.appendChild(messageText);
 
-    transmissionLog.appendChild(messageElement);
-    transmissionLog.scrollTop = transmissionLog.scrollHeight;
+    messagesElement.appendChild(messageElement);
+    messagesElement.scrollTop = messagesElement.scrollHeight;
   }
   
   // Play transmission audio (with voice effect)
