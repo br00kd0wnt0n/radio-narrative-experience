@@ -59,15 +59,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Enhanced AI response handling
     socket.on('ai_response', (data) => {
       console.log("Received AI response:", data);
-      if (data && data.message) {
-        addMessage(data.character, data.message, 'character');
+      if (data && (data.message || data.text)) {
+        addMessage(data.character, data.message || data.text, 'character');
         
         // Play audio if available
         if (data.audioPath) {
           console.log('Playing audio from path:', data.audioPath);
           playGeneratedAudio(data.audioPath);
         } else {
-          addMessage('SYSTEM', 'No audio available for this transmission', 'system');
+          console.log('No audio path available in response');
         }
       } else {
         console.error("Invalid AI response data:", data);
