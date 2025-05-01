@@ -97,14 +97,19 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
     
-    // Add character response handling
+    // Add character response handling - only handle if not already handled by ai_response
     socket.on('character_response', (data) => {
       console.log("Received character response:", data);
+      
+      // Skip if this is an AI response (already handled)
+      if (data && data.data && data.data.isAIResponse) {
+        console.log('Skipping character_response as this is an AI response');
+        return;
+      }
+      
       if (data && data.data && data.data.message) {
         // Handle nested format
         addMessage(data.data.character, data.data.message, 'character');
-        
-        // Clear any waiting status
         clearSpeechStatus();
 
         // Play audio if available in nested format
