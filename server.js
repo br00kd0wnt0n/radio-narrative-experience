@@ -7,6 +7,7 @@ const path = require('path');
 const cors = require('cors');
 require('dotenv').config();
 const elevenLabs = require('elevenlabs-js');
+const { Server } = require('socket.io');
 
 // Set your API key
 elevenLabs.setApiKey(process.env.ELEVENLABS_API_KEY);
@@ -55,8 +56,31 @@ app.get('/mobile', (req, res) => {
 const server = http.createServer(app);
 console.log('HTTP server created (Railway will provide HTTPS)');
 
-// Initialize Socket.IO with the server
-const io = socketIo(server);
+// Initialize Socket.IO with mobile-friendly configuration
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  upgradeTimeout: 30000,
+  allowUpgrades: true,
+  perMessageDeflate: {
+    threshold: 2048 // Only compress messages larger than 2KB
+  },
+  maxHttpBufferSize: 1e8 // 100MB
+});
+
+// Add connection monitoring
+io.engine.on("connection_error", (err) => {
+  console.log("Connection error:", err);
+});
+
+io.engine.on("connection", (socket) => {
+  console.log("New connection established");
+});
 
 // Track connected clients
 const desktopClients = new Map();
@@ -230,6 +254,19 @@ const messageFormats = {
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id, 'from', socket.handshake.address);
   
+  // Set up ping/pong monitoring
+  let pingTimeout;
+  const heartbeat = () => {
+    clearTimeout(pingTimeout);
+    pingTimeout = setTimeout(() => {
+      console.log(`Client ${socket.id} heartbeat timeout`);
+      socket.disconnect(true);
+    }, 60000);
+  };
+  
+  socket.on('ping', heartbeat);
+  socket.on('pong', heartbeat);
+  
   // Client identifies itself as desktop or mobile
   socket.on('register', (data) => {
     if (data.type === 'desktop') {
@@ -238,14 +275,16 @@ io.on('connection', (socket) => {
         socket, 
         pairing_code,
         current_frequency: null,
-        paired_mobile: null
+        paired_mobile: null,
+        lastPing: Date.now()
       });
       socket.emit('registered', { pairing_code });
       console.log(`Desktop registered with code: ${pairing_code} (ID: ${socket.id})`);
     } else if (data.type === 'mobile') {
       mobileClients.set(socket.id, { 
         socket,
-        paired_desktop: null
+        paired_desktop: null,
+        lastPing: Date.now()
       });
       socket.emit('registered', { message: 'Mobile registered' });
       console.log(`Mobile registered (ID: ${socket.id})`);

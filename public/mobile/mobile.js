@@ -32,7 +32,16 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Connect to WebSocket server
   function connectSocket() {
-    socket = io();
+    // Configure Socket.IO with mobile-specific options
+    socket = io({
+      transports: ['websocket', 'polling'],  // Try WebSocket first, fall back to polling
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      autoConnect: true
+    });
     
     // Add connection monitoring
     socket.on('connect', () => {
@@ -49,13 +58,67 @@ document.addEventListener('DOMContentLoaded', function() {
       statusElement.textContent = 'Connection failed';
       statusElement.style.color = '#f44336';
       addMessage('SYSTEM', 'Connection error. Please check your network.', 'system');
+      
+      // Try to reconnect with polling if WebSocket fails
+      if (socket.io.opts.transports[0] === 'websocket') {
+        console.log("Falling back to polling transport");
+        socket.io.opts.transports = ['polling', 'websocket'];
+      }
+    });
+    
+    socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log("Reconnection attempt:", attemptNumber);
+      statusElement.textContent = `Reconnecting (${attemptNumber}/5)...`;
+      statusElement.style.color = '#ff9800';
+    });
+    
+    socket.on('reconnect', (attemptNumber) => {
+      console.log("Reconnected after", attemptNumber, "attempts");
+      statusElement.textContent = 'Reconnected';
+      statusElement.style.color = '#4caf50';
+      addMessage('SYSTEM', 'Connection restored', 'system');
+    });
+    
+    socket.on('reconnect_error', (error) => {
+      console.error("Reconnection error:", error);
+      statusElement.textContent = 'Reconnection failed';
+      statusElement.style.color = '#f44336';
+    });
+    
+    socket.on('reconnect_failed', () => {
+      console.error("Failed to reconnect");
+      statusElement.textContent = 'Connection lost';
+      statusElement.style.color = '#f44336';
+      addMessage('SYSTEM', 'Connection lost. Please reload the page.', 'system');
     });
     
     socket.on('disconnect', (reason) => {
       console.log("Socket disconnected:", reason);
       statusElement.textContent = 'Disconnected';
       statusElement.style.color = '#f44336';
-      addMessage('SYSTEM', `Disconnected: ${reason}. Try reloading.`, 'system');
+      
+      // Provide more specific guidance based on disconnect reason
+      let message = 'Disconnected: ';
+      switch (reason) {
+        case 'io server disconnect':
+          message += 'Server closed the connection. Please reload the page.';
+          break;
+        case 'io client disconnect':
+          message += 'Client disconnected. Please check your network.';
+          break;
+        case 'ping timeout':
+          message += 'Connection timed out. Please check your network.';
+          break;
+        case 'transport close':
+          message += 'Connection closed. Please check your network.';
+          break;
+        case 'transport error':
+          message += 'Connection error. Please check your network.';
+          break;
+        default:
+          message += reason + '. Try reloading.';
+      }
+      addMessage('SYSTEM', message, 'system');
     });
     
     // Enhanced AI response handling
