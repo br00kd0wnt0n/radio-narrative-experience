@@ -11,7 +11,13 @@ const { Server } = require('socket.io');
 const fs = require('fs');
 
 // Set your API key
-elevenLabs.setApiKey(process.env.ELEVENLABS_API_KEY);
+const apiKey = process.env.ELEVENLABS_API_KEY;
+if (!apiKey) {
+  console.error('ELEVENLABS_API_KEY is not set in environment variables');
+} else {
+  console.log('ElevenLabs API key is set');
+  elevenLabs.setApiKey(apiKey);
+}
 
 // Define voice IDs for each character
 const voiceIds = {
@@ -537,12 +543,14 @@ function generatePairingCode() {
 async function generateSpeech(text, voiceId) {
   try {
     console.log(`Generating speech for text: "${text}" with voice ID: ${voiceId}`);
+    console.log('Current API key:', process.env.ELEVENLABS_API_KEY ? 'Set' : 'Not set');
     
     if (!text || !voiceId) {
       console.error('Missing required parameters for speech generation:', { text, voiceId });
       return null;
     }
 
+    console.log('Calling ElevenLabs API...');
     const response = await elevenLabs.textToSpeech(
       voiceId, 
       text, 
@@ -558,11 +566,15 @@ async function generateSpeech(text, voiceId) {
       return null;
     }
     
+    console.log('Received response from ElevenLabs API');
+    
     // Create a unique filename for this audio
     const timestamp = Date.now();
     const filename = `${timestamp}.mp3`;
     const dir = path.join(__dirname, 'public', 'generated');
     const filePath = path.join(dir, filename);
+    
+    console.log(`Will save audio to: ${filePath}`);
     
     // Ensure the directory exists
     try {
@@ -575,11 +587,13 @@ async function generateSpeech(text, voiceId) {
     
     // Save the file
     try {
+      console.log('Saving audio file...');
       await response.saveFile(filePath);
       console.log(`Audio file saved successfully at: ${filePath}`);
       
       // Verify the file exists and is not empty
       const stats = await fs.promises.stat(filePath);
+      console.log(`File size: ${stats.size} bytes`);
       if (stats.size === 0) {
         console.error('Generated audio file is empty');
         return null;
