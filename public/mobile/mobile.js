@@ -92,6 +92,16 @@ document.addEventListener('DOMContentLoaded', function() {
           speechStatus.textContent = '';
           speechStatus.classList.remove('active', 'error');
         }
+      } else if (data && data.message) {
+        // Handle direct message format
+        addMessage(data.character || 'Unknown', data.message, 'character');
+        
+        // Clear any waiting status
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = '';
+          speechStatus.classList.remove('active', 'error');
+        }
       } else {
         console.error("Invalid character response data:", data);
         addMessage('SYSTEM', 'Received invalid response from server', 'system');
@@ -113,6 +123,20 @@ document.addEventListener('DOMContentLoaded', function() {
         speechStatus.textContent = 'Error occurred';
         speechStatus.classList.remove('active');
         speechStatus.classList.add('error');
+      }
+    });
+    
+    // Add status handling
+    socket.on('status', (data) => {
+      console.log("Received status:", data);
+      if (data && data.data && data.data.status) {
+        const status = data.data.status;
+        if (status === 'connected') {
+          console.log("Socket connected successfully");
+        } else if (status === 'disconnected') {
+          console.log("Socket disconnected");
+          addMessage('SYSTEM', 'Connection lost. Please reload the page.', 'system');
+        }
       }
     });
     
@@ -405,6 +429,20 @@ document.addEventListener('DOMContentLoaded', function() {
             speechStatus.textContent = 'Waiting for response...';
             speechStatus.classList.add('active');
           }
+
+          // Clear any existing timeout
+          if (recognitionTimeout) {
+            clearTimeout(recognitionTimeout);
+          }
+
+          // Set new timeout
+          recognitionTimeout = setTimeout(() => {
+            if (speechStatus) {
+              speechStatus.textContent = 'No response received';
+              speechStatus.classList.remove('active');
+              speechStatus.classList.add('error');
+            }
+          }, 10000); // 10 second timeout
 
           // Send message to server
           socket.emit('audio_message', { message: finalTranscript }, (response) => {
