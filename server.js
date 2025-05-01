@@ -19,6 +19,25 @@ if (!apiKey) {
   elevenLabs.setApiKey(apiKey);
 }
 
+// Create a wrapper for the ElevenLabs API to ensure API key is always set
+const elevenLabsWrapper = {
+  textToSpeech: async (voiceId, text, model, options) => {
+    if (!apiKey) {
+      console.error('ElevenLabs API key is not set');
+      return null;
+    }
+    try {
+      return await elevenLabs.textToSpeech(voiceId, text, model, {
+        ...options,
+        apiKey // Explicitly pass the API key
+      });
+    } catch (error) {
+      console.error('Error in ElevenLabs API call:', error);
+      return null;
+    }
+  }
+};
+
 // Define voice IDs for each character
 const voiceIds = {
   'Commander': '21m00Tcm4TlvDq8ikWAM', // Rachel - authoritative female voice
@@ -542,16 +561,21 @@ function generatePairingCode() {
 // Function to generate speech using ElevenLabs
 async function generateSpeech(text, voiceId) {
   try {
-    console.log(`Generating speech for text: "${text}" with voice ID: ${voiceId}`);
-    console.log('Current API key:', process.env.ELEVENLABS_API_KEY ? 'Set' : 'Not set');
+    console.log(`[generateSpeech] Starting speech generation for text: "${text}" with voice ID: ${voiceId}`);
+    console.log('[generateSpeech] Current API key:', apiKey ? 'Set' : 'Not set');
     
     if (!text || !voiceId) {
-      console.error('Missing required parameters for speech generation:', { text, voiceId });
+      console.error('[generateSpeech] Missing required parameters:', { text, voiceId });
       return null;
     }
 
-    console.log('Calling ElevenLabs API...');
-    const response = await elevenLabs.textToSpeech(
+    if (!apiKey) {
+      console.error('[generateSpeech] ElevenLabs API key is not set');
+      return null;
+    }
+
+    console.log('[generateSpeech] Calling ElevenLabs API...');
+    const response = await elevenLabsWrapper.textToSpeech(
       voiceId, 
       text, 
       "eleven_multilingual_v2", 
@@ -562,11 +586,11 @@ async function generateSpeech(text, voiceId) {
     );
     
     if (!response) {
-      console.error('No response from ElevenLabs API');
+      console.error('[generateSpeech] No response from ElevenLabs API');
       return null;
     }
     
-    console.log('Received response from ElevenLabs API');
+    console.log('[generateSpeech] Received response from ElevenLabs API');
     
     // Create a unique filename for this audio
     const timestamp = Date.now();
@@ -574,41 +598,41 @@ async function generateSpeech(text, voiceId) {
     const dir = path.join(__dirname, 'public', 'generated');
     const filePath = path.join(dir, filename);
     
-    console.log(`Will save audio to: ${filePath}`);
+    console.log(`[generateSpeech] Will save audio to: ${filePath}`);
     
     // Ensure the directory exists
     try {
       await fs.promises.mkdir(dir, { recursive: true });
-      console.log(`Ensured directory exists: ${dir}`);
+      console.log(`[generateSpeech] Ensured directory exists: ${dir}`);
     } catch (error) {
-      console.error('Error creating directory:', error);
+      console.error('[generateSpeech] Error creating directory:', error);
       return null;
     }
     
     // Save the file
     try {
-      console.log('Saving audio file...');
+      console.log('[generateSpeech] Saving audio file...');
       await response.saveFile(filePath);
-      console.log(`Audio file saved successfully at: ${filePath}`);
+      console.log(`[generateSpeech] Audio file saved successfully at: ${filePath}`);
       
       // Verify the file exists and is not empty
       const stats = await fs.promises.stat(filePath);
-      console.log(`File size: ${stats.size} bytes`);
+      console.log(`[generateSpeech] File size: ${stats.size} bytes`);
       if (stats.size === 0) {
-        console.error('Generated audio file is empty');
+        console.error('[generateSpeech] Generated audio file is empty');
         return null;
       }
       
       // Return just the filename, not the full path
-      return {
-        filename
-      };
+      const result = { filename };
+      console.log('[generateSpeech] Returning result:', result);
+      return result;
     } catch (error) {
-      console.error('Error saving audio file:', error);
+      console.error('[generateSpeech] Error saving audio file:', error);
       return null;
     }
   } catch (error) {
-    console.error("Error generating speech:", error);
+    console.error("[generateSpeech] Error generating speech:", error);
     return null;
   }
 }
@@ -677,12 +701,13 @@ function checkForKeyInformation(message, character) {
 // Update the generateAIResponse function
 async function generateAIResponse(userMessage, character, characterStage) {
   try {
-    console.log(`Generating response for ${character} in ${characterStage} stage`);
+    console.log(`[generateAIResponse] Starting response generation for ${character} in ${characterStage} stage`);
     
     let responseText = '';
     
     // Check for cross-character references (30% chance)
     if (Math.random() < 0.3) {
+      console.log(`[generateAIResponse] Checking cross-character references for ${character}`);
       // Commander references
       if (character === 'Commander' && characterStage === 'revelation') {
         if (narrativeState.discoveredInfo.experiment) {
@@ -731,6 +756,7 @@ async function generateAIResponse(userMessage, character, characterStage) {
     
     // If no cross-character response was generated, use stage-specific responses
     if (!responseText) {
+      console.log(`[generateAIResponse] Using stage-specific response for ${character} in ${characterStage}`);
       const stageResponses = {
         'Commander': {
           'introduction': [
@@ -827,6 +853,7 @@ async function generateAIResponse(userMessage, character, characterStage) {
     
     // If still no response, use default character responses
     if (!responseText) {
+      console.log(`[generateAIResponse] Using default response for ${character}`);
       const defaultResponses = {
         'Commander': "Command Center Alpha. State your situation.",
         'Scientist': "This is Dr. Chen. The containment systems are showing unusual readings.",
@@ -837,16 +864,26 @@ async function generateAIResponse(userMessage, character, characterStage) {
       responseText = defaultResponses[character] || "Radio static... transmission lost...";
     }
     
-    // Generate audio for the response
-    const voiceId = voiceIds[character] || voiceIds['Commander'];
-    const audioResult = await generateSpeech(responseText, voiceId);
+    console.log(`[generateAIResponse] Final response text: "${responseText}"`);
     
-    return {
+    // Generate audio for the response
+    console.log(`[generateAIResponse] Getting voice ID for ${character}`);
+    const voiceId = voiceIds[character] || voiceIds['Commander'];
+    console.log(`[generateAIResponse] Using voice ID: ${voiceId}`);
+    
+    console.log(`[generateAIResponse] Calling generateSpeech with text: "${responseText}" and voice ID: ${voiceId}`);
+    const audioResult = await generateSpeech(responseText, voiceId);
+    console.log(`[generateAIResponse] Audio generation result:`, audioResult);
+    
+    const result = {
       text: responseText,
       audioPath: audioResult ? `/generated/${audioResult.filename}` : null
     };
+    console.log(`[generateAIResponse] Final response object:`, result);
+    
+    return result;
   } catch (error) {
-    console.error("Error generating AI response:", error);
+    console.error("[generateAIResponse] Error generating AI response:", error);
     return {
       text: "Radio static... transmission lost...",
       audioPath: null
