@@ -84,6 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('character_response', (data) => {
       console.log("Received character response:", data);
       if (data && data.data && data.data.message) {
+        // Handle nested format
         addMessage(data.data.character, data.data.message, 'character');
         
         // Clear any waiting status
@@ -460,6 +461,9 @@ document.addEventListener('DOMContentLoaded', function() {
               }
             }
           });
+        } else {
+          console.error("Socket not connected or invalid");
+          addMessage('SYSTEM', 'Connection issue. Try reloading the page.', 'system');
         }
       }
     };
