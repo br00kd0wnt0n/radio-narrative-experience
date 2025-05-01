@@ -606,13 +606,13 @@ async function generateSpeech(text, voiceId) {
       const userResponse = await elevenLabsClient.get('/user/subscription');
       console.log('[generateSpeech] User subscription status:', userResponse.data);
       
-      if (userResponse.data.character_count === 0) {
-        console.error('[generateSpeech] No characters available in subscription');
+      if (userResponse.data.voice_slots_used >= userResponse.data.voice_limit) {
+        console.error('[generateSpeech] No voice slots available in subscription');
         return null;
       }
       
-      if (userResponse.data.available_characters === 0) {
-        console.error('[generateSpeech] No characters remaining in subscription');
+      if (userResponse.data.status !== 'active') {
+        console.error('[generateSpeech] Subscription is not active');
         return null;
       }
     } catch (error) {
