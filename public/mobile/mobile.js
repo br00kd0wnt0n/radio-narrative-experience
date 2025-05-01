@@ -153,8 +153,12 @@ document.addEventListener('DOMContentLoaded', function() {
       buttonSoundGainNode.gain.value = 0.3;
       buttonSoundGainNode.connect(audioContext.destination);
       
-      // Initialize audio visualizer
-      setupAudioVisualizer();
+      // Set up visualizer with error handling
+      try {
+        setupAudioVisualizer();
+      } catch (vizError) {
+        console.error('Visualizer setup failed:', vizError);
+      }
       
       return true;
     } catch (error) {
@@ -442,30 +446,48 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Add audio visualizer setup
   function setupAudioVisualizer() {
-    // Create canvas for visualizer
-    visualizerCanvas = document.createElement('canvas');
-    visualizerCanvas.className = 'audio-visualizer';
-    visualizerCanvas.width = 150;
-    visualizerCanvas.height = 40;
-    
-    // Add to the interface
-    const container = document.createElement('div');
-    container.className = 'visualizer-container';
-    container.appendChild(visualizerCanvas);
-    
-    document.querySelector('.walkie-talkie').insertBefore(
-      container, 
-      document.querySelector('.controls')
-    );
-    
-    // Get context
-    visualizerContext = visualizerCanvas.getContext('2d');
-    
-    // Initialize visualizer when audio context is ready
-    if (audioContext) {
-      audioAnalyser = audioContext.createAnalyser();
-      audioAnalyser.fftSize = 32; // Small size for simple visualization
-      visualizerData = new Uint8Array(audioAnalyser.frequencyBinCount);
+    try {
+      // Create canvas for visualizer
+      visualizerCanvas = document.createElement('canvas');
+      visualizerCanvas.className = 'audio-visualizer';
+      visualizerCanvas.width = 150;
+      visualizerCanvas.height = 40;
+      
+      // Add to the interface
+      const container = document.createElement('div');
+      container.className = 'visualizer-container';
+      container.appendChild(visualizerCanvas);
+      
+      // Find the walkie-talkie element
+      const walkieTalkie = document.querySelector('.walkie-talkie');
+      if (!walkieTalkie) {
+        console.error('Could not find walkie-talkie element');
+        return false;
+      }
+      
+      // Find the controls element for positioning
+      const controls = document.querySelector('.controls');
+      if (controls) {
+        walkieTalkie.insertBefore(container, controls);
+      } else {
+        // Fallback to appending
+        walkieTalkie.appendChild(container);
+      }
+      
+      // Get context
+      visualizerContext = visualizerCanvas.getContext('2d');
+      
+      // Initialize visualizer when audio context is ready
+      if (audioContext) {
+        audioAnalyser = audioContext.createAnalyser();
+        audioAnalyser.fftSize = 32; // Small size for simple visualization
+        visualizerData = new Uint8Array(audioAnalyser.frequencyBinCount);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error setting up audio visualizer:', error);
+      return false;
     }
   }
   
