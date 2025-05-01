@@ -68,7 +68,11 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage(data.character || 'AI', data.message.text, 'character');
         
         // Play audio if available
-        if (data.audioPath) {
+        if (data.message.audioPath) {
+          console.log('Playing audio from message path:', data.message.audioPath);
+          playGeneratedAudio(data.message.audioPath);
+        } else if (data.audioPath) {
+          console.log('Playing audio from root path:', data.audioPath);
           playGeneratedAudio(data.audioPath);
         } else {
           console.log('No audio path provided in response');
@@ -81,7 +85,12 @@ document.addEventListener('DOMContentLoaded', function() {
       } else if (data.text) {
         // Handle object format
         addMessage(data.character || 'AI', data.text, 'character');
-        clearSpeechStatus();
+        if (data.audioPath) {
+          console.log('Playing audio from text object path:', data.audioPath);
+          playGeneratedAudio(data.audioPath);
+        } else {
+          clearSpeechStatus();
+        }
       } else {
         console.error('Unexpected response format:', data);
         clearSpeechStatus();

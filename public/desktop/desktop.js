@@ -62,10 +62,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (data && data.message) {
         addMessage(data.character, data.message, 'character');
         
-        if (data.audioPath) {
+        // Play audio if available
+        if (data.message.audioPath) {
+          console.log('Playing audio from message path:', data.message.audioPath);
+          playGeneratedAudio(data.message.audioPath);
+        } else if (data.audioPath) {
+          console.log('Playing audio from root path:', data.audioPath);
           playGeneratedAudio(data.audioPath);
         } else {
-          addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
+          addMessage('SYSTEM', 'No audio available for this transmission', 'system');
         }
       } else {
         console.error("Invalid AI response data:", data);
