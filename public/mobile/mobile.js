@@ -30,6 +30,211 @@ document.addEventListener('DOMContentLoaded', function() {
   let visualizerContext = null;
   let visualizerData = null;
   
+  // Initialize audio context immediately
+  try {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    console.log('Audio context initialized');
+  } catch (error) {
+    console.error('Failed to initialize audio context:', error);
+  }
+
+  // Initialize speech recognition immediately
+  function initSpeechRecognition() {
+    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+      console.log('Speech recognition not supported');
+      return false;
+    }
+
+    try {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      speechRecognition = new SpeechRecognition();
+      speechRecognition.continuous = false;
+      speechRecognition.interimResults = true;
+      speechRecognition.maxAlternatives = 3;
+      speechRecognition.lang = 'en-US';
+
+      speechRecognition.onstart = function() {
+        console.log('Speech recognition started');
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = 'Listening...';
+          speechStatus.classList.add('active');
+          speechStatus.classList.remove('error');
+        }
+      };
+
+      speechRecognition.onresult = function(event) {
+        console.log('Speech recognition result:', event);
+        const speechText = document.querySelector('.speech-text');
+        if (!speechText) return;
+
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        if (interimTranscript) {
+          speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
+        }
+
+        if (finalTranscript) {
+          speechText.textContent = finalTranscript;
+          if (finalTranscript.trim() !== '' && socket && socket.connected) {
+            console.log('Sending message:', finalTranscript);
+            addMessage('YOU', finalTranscript, 'user');
+            socket.emit('audio_message', { message: finalTranscript });
+          }
+        }
+      };
+
+      speechRecognition.onerror = function(event) {
+        console.error('Speech recognition error:', event.error);
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = `Error: ${event.error}`;
+          speechStatus.classList.remove('active');
+          speechStatus.classList.add('error');
+        }
+      };
+
+      speechRecognition.onend = function() {
+        console.log('Speech recognition ended');
+        if (!isTransmitting) {
+          const speechStatus = document.querySelector('.speech-status');
+          if (speechStatus) {
+            speechStatus.textContent = 'Ready';
+            speechStatus.classList.remove('active', 'error');
+          }
+        }
+      };
+
+      console.log('Speech recognition initialized');
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize speech recognition:', error);
+      return false;
+    }
+  }
+
+  // Initialize speech recognition immediately
+  initSpeechRecognition();
+
+  // Request microphone permissions proactively
+  async function requestMicrophonePermission() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('Microphone permission granted');
+      stream.getTracks().forEach(track => track.stop()); // Stop the stream after getting permission
+      return true;
+    } catch (error) {
+      console.error('Microphone permission denied:', error);
+      return false;
+    }
+  }
+
+  // Request microphone permission immediately
+  requestMicrophonePermission();
+
+  // Update push-to-talk button setup
+  function setupPushToTalk() {
+    console.log('Setting up push-to-talk button');
+    
+    // Touch events for mobile
+    pushToTalkButton.addEventListener('touchstart', async (e) => {
+      e.preventDefault();
+      console.log('Push-to-talk touch start');
+      
+      if (!isPaired || !isFrequencyActive) {
+        console.log('Cannot transmit: not paired or no active frequency');
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        startTransmitting(e, stream);
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        addMessage('SYSTEM', 'Microphone access denied. Please enable microphone permissions.', 'system');
+      }
+    }, { passive: false });
+
+    pushToTalkButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      console.log('Push-to-talk touch end');
+      stopTransmitting(e);
+    }, { passive: false });
+
+    // Mouse events for desktop testing
+    pushToTalkButton.addEventListener('mousedown', async (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        startTransmitting(e, stream);
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        addMessage('SYSTEM', 'Microphone access denied. Please enable microphone permissions.', 'system');
+      }
+    });
+
+    pushToTalkButton.addEventListener('mouseup', (e) => {
+      stopTransmitting(e);
+    });
+  }
+
+  // Update startTransmitting function
+  async function startTransmitting(e, stream) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!isPaired || !isFrequencyActive || isTransmitting) {
+      console.log('Cannot transmit:', { isPaired, isFrequencyActive, isTransmitting });
+      return;
+    }
+
+    isTransmitting = true;
+    pushToTalkButton.classList.add('active');
+    document.querySelector('.transmission-indicator').classList.add('active');
+
+    console.log('Starting transmission...');
+
+    // Clear previous speech text
+    const speechText = document.querySelector('.speech-text');
+    if (speechText) speechText.textContent = '';
+
+    try {
+      // Start visualizer
+      startAudioVisualization(stream);
+
+      // Start speech recognition
+      if (speechRecognition) {
+        try {
+          speechRecognition.start();
+          console.log('Speech recognition started');
+        } catch (error) {
+          console.error('Speech recognition start error:', error);
+          fallbackToTextInput();
+        }
+      } else {
+        console.log('Speech recognition not available, falling back to text input');
+        fallbackToTextInput();
+      }
+    } catch (error) {
+      console.error('Transmission error:', error);
+      addMessage('SYSTEM', `Error: ${error.message}`, 'system');
+      isTransmitting = false;
+      pushToTalkButton.classList.remove('active');
+      document.querySelector('.transmission-indicator').classList.remove('active');
+    }
+  }
+  
   // Connect to WebSocket server
   function connectSocket() {
     // Configure Socket.IO with mobile-specific options
@@ -409,165 +614,6 @@ document.addEventListener('DOMContentLoaded', function() {
     messagesElement.scrollTop = messagesElement.scrollHeight;
   }
   
-  // Initialize speech recognition
-  function initSpeechRecognition() {
-    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-      console.warn("Speech recognition not supported by this browser");
-      addMessage('SYSTEM', 'Speech recognition not available. Will use text input instead.', 'system');
-      return false;
-    }
-
-    try {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      speechRecognition = new SpeechRecognition();
-      speechRecognition.continuous = false;
-      speechRecognition.interimResults = true;
-      speechRecognition.maxAlternatives = 3;
-      speechRecognition.lang = 'en-US';
-
-      // Add mobile-specific error handling
-      speechRecognition.onstart = function() {
-        console.log("Speech recognition started");
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = 'Listening...';
-          speechStatus.classList.add('active');
-          speechStatus.classList.remove('error');
-        }
-      };
-
-      speechRecognition.onresult = function(event) {
-        console.log("Speech recognition result:", event);
-        const speechText = document.querySelector('.speech-text');
-        if (!speechText) return;
-
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-
-        // Display interim results
-        if (interimTranscript) {
-          speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
-        }
-
-        // Process final results
-        if (finalTranscript) {
-          speechText.textContent = finalTranscript;
-
-          // Send the final transcript
-          if (finalTranscript.trim() !== '' && socket && socket.connected) {
-            console.log("Sending message to server:", finalTranscript);
-            addMessage('YOU', finalTranscript, 'user');
-
-            // Update status to waiting
-            const speechStatus = document.querySelector('.speech-status');
-            if (speechStatus) {
-              speechStatus.textContent = 'Waiting for response...';
-              speechStatus.classList.add('active');
-              speechStatus.classList.remove('error');
-            }
-
-            // Clear any existing timeout
-            if (recognitionTimeout) {
-              clearTimeout(recognitionTimeout);
-            }
-
-            // Set new timeout
-            recognitionTimeout = setTimeout(() => {
-              if (speechStatus) {
-                speechStatus.textContent = 'No response received';
-                speechStatus.classList.remove('active');
-                speechStatus.classList.add('error');
-              }
-            }, 10000); // 10 second timeout
-
-            // Send message to server
-            socket.emit('audio_message', { message: finalTranscript }, (response) => {
-              if (response && response.success) {
-                console.log("Server acknowledged message");
-              } else {
-                console.error("Server did not acknowledge message:", response);
-                addMessage('SYSTEM', 'Failed to send message. Please try again.', 'system');
-                
-                // Update status to error
-                if (speechStatus) {
-                  speechStatus.textContent = 'Failed to send message';
-                  speechStatus.classList.remove('active');
-                  speechStatus.classList.add('error');
-                }
-              }
-            });
-          } else {
-            console.error("Socket not connected or invalid");
-            addMessage('SYSTEM', 'Connection issue. Try reloading the page.', 'system');
-          }
-        }
-      };
-
-      speechRecognition.onerror = function(event) {
-        console.error('Speech recognition error:', event.error);
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = `Error: ${event.error}`;
-          speechStatus.classList.remove('active');
-          speechStatus.classList.add('error');
-        }
-
-        // Provide specific guidance based on error type
-        let errorMessage = 'Speech recognition error. ';
-        switch (event.error) {
-          case 'no-speech':
-            errorMessage += 'No speech was detected. Please try speaking again.';
-            break;
-          case 'aborted':
-            errorMessage += 'Speech recognition was aborted. Please try again.';
-            break;
-          case 'audio-capture':
-            errorMessage += 'Could not capture audio. Please check your microphone.';
-            break;
-          case 'network':
-            errorMessage += 'Network error occurred. Please check your connection.';
-            break;
-          case 'not-allowed':
-          case 'permission-denied':
-            errorMessage += 'Microphone access was denied. Please allow microphone access in your browser settings.';
-            break;
-          case 'service-not-allowed':
-            errorMessage += 'Speech recognition service is not allowed. Please check your browser settings.';
-            break;
-          default:
-            errorMessage += 'An unknown error occurred. Please try using text input below.';
-        }
-        addMessage('SYSTEM', errorMessage, 'system');
-      };
-
-      speechRecognition.onend = function() {
-        console.log("Speech recognition ended");
-        if (!isTransmitting) {
-          const speechStatus = document.querySelector('.speech-status');
-          if (speechStatus) {
-            speechStatus.textContent = 'Ready';
-            speechStatus.classList.remove('active', 'error');
-          }
-        }
-      };
-
-      return true;
-    } catch (error) {
-      console.error('Failed to initialize speech recognition:', error);
-      addMessage('SYSTEM', 'Failed to initialize speech recognition. Will use text input instead.', 'system');
-      return false;
-    }
-  }
-  
   // Initialize audio recording
   async function initAudioRecording() {
     try {
@@ -596,275 +642,6 @@ document.addEventListener('DOMContentLoaded', function() {
       addMessage('SYSTEM', 'Could not access microphone. Please check permissions.', 'system');
       return false;
     }
-  }
-  
-  // Update setupPushToTalk function to use new button sounds
-  function setupPushToTalk() {
-    // Prevent default touch behavior
-    pushToTalkButton.addEventListener('touchstart', (e) => {
-      e.preventDefault();
-      if (!isPaired || !isFrequencyActive) return;
-      startTransmitting(e);
-      playButtonSound('start');
-    }, { passive: false });
-    
-    pushToTalkButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      if (!isPaired || !isFrequencyActive) return;
-      stopTransmitting(e);
-      playButtonSound('stop');
-    }, { passive: false });
-    
-    // Keep mouse events for desktop
-    pushToTalkButton.addEventListener('mousedown', (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-      startTransmitting(e);
-      playButtonSound('start');
-    });
-    
-    pushToTalkButton.addEventListener('mouseup', (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-      stopTransmitting(e);
-      playButtonSound('stop');
-    });
-  }
-  
-  // Start audio transmission
-  async function startTransmitting(e) {
-    e.preventDefault();
-    e.stopPropagation(); // Prevent text selection
-    
-    if (!isPaired || !isFrequencyActive || isTransmitting) {
-      console.log("Cannot transmit: ", {isPaired, isFrequencyActive, isTransmitting});
-      return;
-    }
-    
-    isTransmitting = true;
-    pushToTalkButton.classList.add('active');
-    
-    // Play button sound
-    playButtonSound('start');
-    
-    console.log("Starting transmission...");
-    
-    // Clear previous speech text
-    const speechText = document.querySelector('.speech-text');
-    if (speechText) speechText.textContent = '';
-    
-    try {
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      console.log("Microphone access granted:", stream);
-      
-      // Start visualizer
-      startAudioVisualization(stream);
-      
-      // Initialize speech recognition if needed
-      if (!speechRecognition) {
-        console.log("Initializing speech recognition...");
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        speechRecognition = new SpeechRecognition();
-        speechRecognition.continuous = false;
-        speechRecognition.interimResults = true;
-        speechRecognition.maxAlternatives = 3;
-        speechRecognition.lang = 'en-US';
-        
-        // Set up event handlers
-        speechRecognition.onstart = function() {
-          console.log("Speech recognition started");
-          const speechStatus = document.querySelector('.speech-status');
-          if (speechStatus) {
-            speechStatus.textContent = 'Listening...';
-            speechStatus.classList.add('active');
-            speechStatus.classList.remove('error');
-          }
-        };
-        
-        speechRecognition.onresult = function(event) {
-          console.log("Speech recognition result:", event);
-          const speechText = document.querySelector('.speech-text');
-          if (!speechText) return;
-          
-          let interimTranscript = '';
-          let finalTranscript = '';
-          
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              finalTranscript += transcript;
-            } else {
-              interimTranscript += transcript;
-            }
-          }
-          
-          // Display interim results
-          if (interimTranscript) {
-            speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
-          }
-          
-          // Process final results
-          if (finalTranscript) {
-            speechText.textContent = finalTranscript;
-            
-            // Send the final transcript
-            if (finalTranscript.trim() !== '' && socket && socket.connected) {
-              console.log("Sending message to server:", finalTranscript);
-              addMessage('YOU', finalTranscript, 'user');
-              
-              // Update status to waiting
-              const speechStatus = document.querySelector('.speech-status');
-              if (speechStatus) {
-                speechStatus.textContent = 'Waiting for response...';
-                speechStatus.classList.add('active');
-                speechStatus.classList.remove('error');
-              }
-              
-              // Send message to server
-              socket.emit('audio_message', { message: finalTranscript }, (response) => {
-                if (response && response.success) {
-                  console.log("Server acknowledged message");
-                } else {
-                  console.error("Server did not acknowledge message:", response);
-                  addMessage('SYSTEM', 'Failed to send message. Please try again.', 'system');
-                  
-                  // Update status to error
-                  if (speechStatus) {
-                    speechStatus.textContent = 'Failed to send message';
-                    speechStatus.classList.remove('active');
-                    speechStatus.classList.add('error');
-                  }
-                }
-              });
-            }
-          }
-        };
-        
-        speechRecognition.onerror = function(event) {
-          console.error('Speech recognition error:', event.error);
-          const speechStatus = document.querySelector('.speech-status');
-          if (speechStatus) {
-            speechStatus.textContent = `Error: ${event.error}`;
-            speechStatus.classList.remove('active');
-            speechStatus.classList.add('error');
-          }
-          
-          // Provide specific guidance based on error type
-          let errorMessage = 'Speech recognition error. ';
-          switch (event.error) {
-            case 'no-speech':
-              errorMessage += 'No speech was detected. Please try speaking again.';
-              break;
-            case 'aborted':
-              errorMessage += 'Speech recognition was aborted. Please try again.';
-              break;
-            case 'audio-capture':
-              errorMessage += 'Could not capture audio. Please check your microphone.';
-              break;
-            case 'network':
-              errorMessage += 'Network error occurred. Please check your connection.';
-              break;
-            case 'not-allowed':
-            case 'permission-denied':
-              errorMessage += 'Microphone access was denied. Please allow microphone access in your browser settings.';
-              break;
-            case 'service-not-allowed':
-              errorMessage += 'Speech recognition service is not allowed. Please check your browser settings.';
-              break;
-            default:
-              errorMessage += 'An unknown error occurred. Please try using text input below.';
-          }
-          addMessage('SYSTEM', errorMessage, 'system');
-          
-          // Fall back to text input
-          fallbackToTextInput();
-        };
-        
-        speechRecognition.onend = function() {
-          console.log("Speech recognition ended");
-          if (!isTransmitting) {
-            const speechStatus = document.querySelector('.speech-status');
-            if (speechStatus) {
-              speechStatus.textContent = 'Ready';
-              speechStatus.classList.remove('active', 'error');
-            }
-          }
-        };
-      }
-      
-      // Start speech recognition
-      try {
-        if (speechRecognition.state === 'listening') {
-          speechRecognition.stop();
-        }
-        speechRecognition.start();
-        console.log("Speech recognition started successfully");
-      } catch (error) {
-        console.error('Failed to start speech recognition:', error);
-        fallbackToTextInput();
-      }
-    } catch (error) {
-      console.error('Microphone access error:', error);
-      addMessage('SYSTEM', `Microphone error: ${error.message}`, 'system');
-      isTransmitting = false;
-      pushToTalkButton.classList.remove('active');
-      fallbackToTextInput();
-    }
-  }
-  
-  // Helper function to fallback to text input
-  function fallbackToTextInput() {
-    // Prompt for text input
-    const userMessage = prompt('Enter your message:');
-    
-    if (userMessage && userMessage.trim() !== '') {
-      console.log("Sending fallback message:", userMessage);
-      addMessage('YOU', userMessage, 'user');
-      
-      if (socket) {
-        socket.emit('audio_message', { message: userMessage });
-      }
-    }
-  }
-  
-  // Create radio voice effect
-  function createRadioVoiceEffect(audioElement) {
-    const source = audioContext.createMediaElementSource(audioElement);
-    
-    // Create filter nodes for radio effect
-    const lowpass = audioContext.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.value = 2000;
-    
-    const highpass = audioContext.createBiquadFilter();
-    highpass.type = 'highpass';
-    highpass.frequency.value = 500;
-    
-    // Create distortion for radio "crunch"
-    const distortion = audioContext.createWaveShaper();
-    distortion.curve = createDistortionCurve(100);
-    distortion.oversample = '4x';
-    
-    // Connect the nodes
-    source.connect(highpass);
-    highpass.connect(lowpass);
-    lowpass.connect(distortion);
-    distortion.connect(audioContext.destination);
-    
-    return source;
-  }
-  
-  // Helper function to create distortion curve
-  function createDistortionCurve(amount) {
-    const samples = 44100;
-    const curve = new Float32Array(samples);
-    const deg = Math.PI / 180;
-    
-    for (let i = 0; i < samples; i++) {
-      const x = (i * 2) / samples - 1;
-      curve[i] = (3 + amount) * x * 20 * deg / (Math.PI + amount * Math.abs(x));
-    }
-    
-    return curve;
   }
   
   // Stop audio transmission
@@ -1043,6 +820,62 @@ document.addEventListener('DOMContentLoaded', function() {
       speechStatus.textContent = '';
       speechStatus.classList.remove('active', 'error');
     }
+  }
+  
+  // Helper function to fallback to text input
+  function fallbackToTextInput() {
+    // Prompt for text input
+    const userMessage = prompt('Enter your message:');
+    
+    if (userMessage && userMessage.trim() !== '') {
+      console.log("Sending fallback message:", userMessage);
+      addMessage('YOU', userMessage, 'user');
+      
+      if (socket) {
+        socket.emit('audio_message', { message: userMessage });
+      }
+    }
+  }
+  
+  // Create radio voice effect
+  function createRadioVoiceEffect(audioElement) {
+    const source = audioContext.createMediaElementSource(audioElement);
+    
+    // Create filter nodes for radio effect
+    const lowpass = audioContext.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 2000;
+    
+    const highpass = audioContext.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 500;
+    
+    // Create distortion for radio "crunch"
+    const distortion = audioContext.createWaveShaper();
+    distortion.curve = createDistortionCurve(100);
+    distortion.oversample = '4x';
+    
+    // Connect the nodes
+    source.connect(highpass);
+    highpass.connect(lowpass);
+    lowpass.connect(distortion);
+    distortion.connect(audioContext.destination);
+    
+    return source;
+  }
+  
+  // Helper function to create distortion curve
+  function createDistortionCurve(amount) {
+    const samples = 44100;
+    const curve = new Float32Array(samples);
+    const deg = Math.PI / 180;
+    
+    for (let i = 0; i < samples; i++) {
+      const x = (i * 2) / samples - 1;
+      curve[i] = (3 + amount) * x * 20 * deg / (Math.PI + amount * Math.abs(x));
+    }
+    
+    return curve;
   }
   
   // Initialize the application
