@@ -23,9 +23,47 @@ const elevenLabsClient = axios.create({
   baseURL: 'https://api.elevenlabs.io/v1',
   headers: {
     'xi-api-key': apiKey,
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'Accept': 'audio/mpeg'
   }
 });
+
+// Add request interceptor for debugging
+elevenLabsClient.interceptors.request.use(request => {
+  console.log('Starting Request:', {
+    url: request.url,
+    method: request.method,
+    headers: request.headers
+  });
+  return request;
+});
+
+// Add response interceptor for debugging
+elevenLabsClient.interceptors.response.use(
+  response => {
+    console.log('Response:', {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+    return response;
+  },
+  error => {
+    if (error.response) {
+      console.error('API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        headers: error.response.headers
+      });
+    } else if (error.request) {
+      console.error('API Error Request:', error.request);
+    } else {
+      console.error('API Error:', error.message);
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Define voice IDs for each character
 const voiceIds = {
@@ -563,6 +601,25 @@ async function generateSpeech(text, voiceId) {
       return null;
     }
 
+    // First, check the user's subscription status
+    try {
+      const userResponse = await elevenLabsClient.get('/user/subscription');
+      console.log('[generateSpeech] User subscription status:', userResponse.data);
+      
+      if (userResponse.data.character_count === 0) {
+        console.error('[generateSpeech] No characters available in subscription');
+        return null;
+      }
+      
+      if (userResponse.data.available_characters === 0) {
+        console.error('[generateSpeech] No characters remaining in subscription');
+        return null;
+      }
+    } catch (error) {
+      console.error('[generateSpeech] Error checking subscription:', error.message);
+      // Continue anyway, as the API might still work
+    }
+
     console.log('[generateSpeech] Calling ElevenLabs API...');
     
     // Make the API call directly
@@ -574,7 +631,12 @@ async function generateSpeech(text, voiceId) {
         similarity_boost: 0.75
       }
     }, {
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg'
+      }
     });
     
     if (!response || !response.data) {
@@ -629,8 +691,20 @@ async function generateSpeech(text, voiceId) {
       console.error("[generateSpeech] API Error details:", {
         status: error.response.status,
         statusText: error.response.statusText,
-        data: error.response.data
+        data: error.response.data,
+        headers: error.response.headers
       });
+      
+      // Check for specific error cases
+      if (error.response.status === 401) {
+        if (error.response.data && error.response.data.detail) {
+          console.error("[generateSpeech] Authentication error:", error.response.data.detail);
+        } else {
+          console.error("[generateSpeech] Authentication error - please check your API key and subscription status");
+        }
+      } else if (error.response.status === 429) {
+        console.error("[generateSpeech] Rate limit exceeded or insufficient credits");
+      }
     }
     return null;
   }
