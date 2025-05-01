@@ -146,9 +146,16 @@ document.addEventListener('DOMContentLoaded', function() {
   function setupPushToTalk() {
     console.log('Setting up push-to-talk button');
     
+    // Prevent any default touch behaviors on the button
+    pushToTalkButton.style.touchAction = 'none';
+    pushToTalkButton.style.webkitTouchCallout = 'none';
+    pushToTalkButton.style.webkitUserSelect = 'none';
+    pushToTalkButton.style.userSelect = 'none';
+    
     // Touch events for mobile
     pushToTalkButton.addEventListener('touchstart', async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       console.log('Push-to-talk touch start');
       
       if (!isPaired || !isFrequencyActive) {
@@ -167,7 +174,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     pushToTalkButton.addEventListener('touchend', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       console.log('Push-to-talk touch end');
+      stopTransmitting(e);
+    }, { passive: false });
+
+    // Also handle touchcancel
+    pushToTalkButton.addEventListener('touchcancel', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('Push-to-talk touch cancelled');
       stopTransmitting(e);
     }, { passive: false });
 
@@ -186,6 +202,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     pushToTalkButton.addEventListener('mouseup', (e) => {
       stopTransmitting(e);
+    });
+
+    // Add visual feedback
+    pushToTalkButton.addEventListener('touchstart', () => {
+      pushToTalkButton.classList.add('pressed');
+    });
+
+    pushToTalkButton.addEventListener('touchend', () => {
+      pushToTalkButton.classList.remove('pressed');
+    });
+
+    pushToTalkButton.addEventListener('touchcancel', () => {
+      pushToTalkButton.classList.remove('pressed');
     });
   }
 
@@ -216,6 +245,9 @@ document.addEventListener('DOMContentLoaded', function() {
       // Start speech recognition
       if (speechRecognition) {
         try {
+          if (speechRecognition.state === 'listening') {
+            speechRecognition.stop();
+          }
           speechRecognition.start();
           console.log('Speech recognition started');
         } catch (error) {
@@ -646,21 +678,24 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Stop audio transmission
   function stopTransmitting(e) {
-    e.preventDefault();
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     
     if (!isTransmitting) return;
     
     isTransmitting = false;
     pushToTalkButton.classList.remove('active');
+    pushToTalkButton.classList.remove('pressed');
     document.querySelector('.transmission-indicator').classList.remove('active');
-    
-    // Play button sound
-    playButtonSound('end');
     
     // Stop speech recognition
     if (speechRecognition) {
       try {
-        speechRecognition.stop();
+        if (speechRecognition.state === 'listening') {
+          speechRecognition.stop();
+        }
       } catch (error) {
         console.error('Speech recognition stop error:', error);
       }
