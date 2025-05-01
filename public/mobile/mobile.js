@@ -64,10 +64,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (data && data.message) {
         addMessage(data.character, data.message, 'character');
         
+        // Clear any waiting status
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = '';
+          speechStatus.classList.remove('active', 'error');
+        }
+        
         if (data.audioPath) {
           playGeneratedAudio(data.audioPath);
-        } else {
-          addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
         }
       } else {
         console.error("Invalid AI response data:", data);
@@ -90,6 +95,24 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         console.error("Invalid character response data:", data);
         addMessage('SYSTEM', 'Received invalid response from server', 'system');
+      }
+    });
+    
+    // Add error handling
+    socket.on('error', (data) => {
+      console.error("Socket error:", data);
+      if (data && data.message) {
+        addMessage('SYSTEM', `Error: ${data.message}`, 'system');
+      } else {
+        addMessage('SYSTEM', 'An error occurred', 'system');
+      }
+      
+      // Clear any waiting status
+      const speechStatus = document.querySelector('.speech-status');
+      if (speechStatus) {
+        speechStatus.textContent = 'Error occurred';
+        speechStatus.classList.remove('active');
+        speechStatus.classList.add('error');
       }
     });
     
@@ -376,9 +399,27 @@ document.addEventListener('DOMContentLoaded', function() {
           console.log("Sending message to server:", finalTranscript);
           addMessage('YOU', finalTranscript, 'user');
 
+          // Update status to waiting
+          const speechStatus = document.querySelector('.speech-status');
+          if (speechStatus) {
+            speechStatus.textContent = 'Waiting for response...';
+            speechStatus.classList.add('active');
+          }
+
+          // Send message to server
           socket.emit('audio_message', { message: finalTranscript }, (response) => {
             if (response && response.success) {
               console.log("Server acknowledged message");
+            } else {
+              console.error("Server did not acknowledge message:", response);
+              addMessage('SYSTEM', 'Failed to send message. Please try again.', 'system');
+              
+              // Update status to error
+              if (speechStatus) {
+                speechStatus.textContent = 'Failed to send message';
+                speechStatus.classList.remove('active');
+                speechStatus.classList.add('error');
+              }
             }
           });
         }
