@@ -642,7 +642,7 @@ document.addEventListener('DOMContentLoaded', function() {
     isTransmitting = true;
     pushToTalkButton.classList.add('active');
     
-    // Play button sound instead of static
+    // Play button sound
     playButtonSound('start');
     
     console.log("Starting transmission...");
@@ -659,17 +659,140 @@ document.addEventListener('DOMContentLoaded', function() {
       // Start visualizer
       startAudioVisualization(stream);
       
-      // Start speech recognition if not already initialized
+      // Initialize speech recognition if needed
       if (!speechRecognition) {
-        const speechInit = initSpeechRecognition();
-        if (!speechInit) {
+        console.log("Initializing speech recognition...");
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        speechRecognition = new SpeechRecognition();
+        speechRecognition.continuous = false;
+        speechRecognition.interimResults = true;
+        speechRecognition.maxAlternatives = 3;
+        speechRecognition.lang = 'en-US';
+        
+        // Set up event handlers
+        speechRecognition.onstart = function() {
+          console.log("Speech recognition started");
+          const speechStatus = document.querySelector('.speech-status');
+          if (speechStatus) {
+            speechStatus.textContent = 'Listening...';
+            speechStatus.classList.add('active');
+            speechStatus.classList.remove('error');
+          }
+        };
+        
+        speechRecognition.onresult = function(event) {
+          console.log("Speech recognition result:", event);
+          const speechText = document.querySelector('.speech-text');
+          if (!speechText) return;
+          
+          let interimTranscript = '';
+          let finalTranscript = '';
+          
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+          
+          // Display interim results
+          if (interimTranscript) {
+            speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
+          }
+          
+          // Process final results
+          if (finalTranscript) {
+            speechText.textContent = finalTranscript;
+            
+            // Send the final transcript
+            if (finalTranscript.trim() !== '' && socket && socket.connected) {
+              console.log("Sending message to server:", finalTranscript);
+              addMessage('YOU', finalTranscript, 'user');
+              
+              // Update status to waiting
+              const speechStatus = document.querySelector('.speech-status');
+              if (speechStatus) {
+                speechStatus.textContent = 'Waiting for response...';
+                speechStatus.classList.add('active');
+                speechStatus.classList.remove('error');
+              }
+              
+              // Send message to server
+              socket.emit('audio_message', { message: finalTranscript }, (response) => {
+                if (response && response.success) {
+                  console.log("Server acknowledged message");
+                } else {
+                  console.error("Server did not acknowledge message:", response);
+                  addMessage('SYSTEM', 'Failed to send message. Please try again.', 'system');
+                  
+                  // Update status to error
+                  if (speechStatus) {
+                    speechStatus.textContent = 'Failed to send message';
+                    speechStatus.classList.remove('active');
+                    speechStatus.classList.add('error');
+                  }
+                }
+              });
+            }
+          }
+        };
+        
+        speechRecognition.onerror = function(event) {
+          console.error('Speech recognition error:', event.error);
+          const speechStatus = document.querySelector('.speech-status');
+          if (speechStatus) {
+            speechStatus.textContent = `Error: ${event.error}`;
+            speechStatus.classList.remove('active');
+            speechStatus.classList.add('error');
+          }
+          
+          // Provide specific guidance based on error type
+          let errorMessage = 'Speech recognition error. ';
+          switch (event.error) {
+            case 'no-speech':
+              errorMessage += 'No speech was detected. Please try speaking again.';
+              break;
+            case 'aborted':
+              errorMessage += 'Speech recognition was aborted. Please try again.';
+              break;
+            case 'audio-capture':
+              errorMessage += 'Could not capture audio. Please check your microphone.';
+              break;
+            case 'network':
+              errorMessage += 'Network error occurred. Please check your connection.';
+              break;
+            case 'not-allowed':
+            case 'permission-denied':
+              errorMessage += 'Microphone access was denied. Please allow microphone access in your browser settings.';
+              break;
+            case 'service-not-allowed':
+              errorMessage += 'Speech recognition service is not allowed. Please check your browser settings.';
+              break;
+            default:
+              errorMessage += 'An unknown error occurred. Please try using text input below.';
+          }
+          addMessage('SYSTEM', errorMessage, 'system');
+          
+          // Fall back to text input
           fallbackToTextInput();
-          return;
-        }
+        };
+        
+        speechRecognition.onend = function() {
+          console.log("Speech recognition ended");
+          if (!isTransmitting) {
+            const speechStatus = document.querySelector('.speech-status');
+            if (speechStatus) {
+              speechStatus.textContent = 'Ready';
+              speechStatus.classList.remove('active', 'error');
+            }
+          }
+        };
       }
       
+      // Start speech recognition
       try {
-        // Ensure we're not already listening
         if (speechRecognition.state === 'listening') {
           speechRecognition.stop();
         }
