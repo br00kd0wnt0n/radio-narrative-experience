@@ -459,15 +459,15 @@ io.on('connection', (socket) => {
       
       // Generate AI response
       const response = await generateAIResponse(userMessage, character, characterState.stage);
-      console.log(`Generated response for ${character}: "${response}"`);
+      console.log(`Generated response for ${character}: "${response.text}"`);
 
       // Generate speech for the response
-      const audioResult = await generateSpeech(response, character);
+      const audioResult = await generateSpeech(response.text, character);
       console.log("Generated speech:", audioResult);
 
       // Send response back to both clients using standardized format
       const responseMessage = {
-        message: response,
+        message: response.text,
         character: character,
         isNarrativeEvent: false,
         isAIResponse: true,
@@ -674,50 +674,80 @@ async function generateAIResponse(userMessage, character, characterStage) {
       // Commander references
       if (character === 'Commander' && characterStage === 'revelation') {
         if (narrativeState.discoveredInfo.experiment) {
-          return "The scientists were playing with forces they didn't understand. Now we're all paying the price.";
+          return {
+            text: "The scientists were playing with forces they didn't understand. Now we're all paying the price.",
+            audioPath: null
+          };
         }
         if (narrativeState.discoveredInfo.creature) {
-          return "If what the survivor reported is true, we need to adjust our containment strategy immediately.";
+          return {
+            text: "If what the survivor reported is true, we need to adjust our containment strategy immediately.",
+            audioPath: null
+          };
         }
       }
       
       // Scientist references
       if (character === 'Scientist' && characterStage === 'crisis') {
         if (narrativeState.discoveredInfo.breach) {
-          return "You spoke with security? Then you know about the containment breach. It's worse than they realize.";
+          return {
+            text: "You spoke with security? Then you know about the containment breach. It's worse than they realize.",
+            audioPath: null
+          };
         }
         if (narrativeState.discoveredInfo.government) {
-          return "The classified nature of this project... it's why we weren't prepared for this scale of failure.";
+          return {
+            text: "The classified nature of this project... it's why we weren't prepared for this scale of failure.",
+            audioPath: null
+          };
         }
       }
       
       // Survivor references
       if (character === 'Survivor' && characterStage === 'revelation') {
         if (narrativeState.discoveredInfo.experiment) {
-          return "So that's what they were doing in the facility... no wonder everything's changing.";
+          return {
+            text: "So that's what they were doing in the facility... no wonder everything's changing.",
+            audioPath: null
+          };
         }
         if (narrativeState.discoveredInfo.radiation) {
-          return "The doctor mentioned radiation... that explains why the animals are acting so strange.";
+          return {
+            text: "The doctor mentioned radiation... that explains why the animals are acting so strange.",
+            audioPath: null
+          };
         }
       }
       
       // Spy references
       if (character === 'Spy' && characterStage === 'crisis') {
         if (narrativeState.discoveredInfo.government) {
-          return "The government's involvement goes deeper than we thought. This was never just a research facility.";
+          return {
+            text: "The government's involvement goes deeper than we thought. This was never just a research facility.",
+            audioPath: null
+          };
         }
         if (narrativeState.discoveredInfo.evacuation) {
-          return "The commander's evacuation order... it's a cover. They're planning something else.";
+          return {
+            text: "The commander's evacuation order... it's a cover. They're planning something else.",
+            audioPath: null
+          };
         }
       }
       
       // Pilot references
       if (character === 'Pilot' && characterStage === 'crisis') {
         if (narrativeState.discoveredInfo.containment) {
-          return "The containment field the scientists mentioned... it's affecting our instruments. We can't maintain altitude!";
+          return {
+            text: "The containment field the scientists mentioned... it's affecting our instruments. We can't maintain altitude!",
+            audioPath: null
+          };
         }
         if (narrativeState.discoveredInfo.mutation) {
-          return "The doctor's reports about mutations... I'm seeing things in the clouds that shouldn't be possible.";
+          return {
+            text: "The doctor's reports about mutations... I'm seeing things in the clouds that shouldn't be possible.",
+            audioPath: null
+          };
         }
       }
     }
