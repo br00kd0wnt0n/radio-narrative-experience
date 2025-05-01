@@ -140,23 +140,38 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       
-      // Create gain node for static
+      // Set up audio source from the static audio element
+      const source = audioContext.createMediaStreamSource(staticAudio);
+      
+      // Create gain node for volume control
       staticGainNode = audioContext.createGain();
-      staticGainNode.gain.value = 0.1; // Lower volume for desktop
+      staticGainNode.gain.value = 0.7;
+      
+      // Create a filter for the static
+      window.staticFilterNode = audioContext.createBiquadFilter();
+      window.staticFilterNode.type = 'bandpass';
+      window.staticFilterNode.frequency.value = 1000;
+      window.staticFilterNode.Q.value = 0.5;
+      
+      // Connect nodes
+      source.connect(window.staticFilterNode);
+      window.staticFilterNode.connect(staticGainNode);
       staticGainNode.connect(audioContext.destination);
       
-      // Create gain node for button sounds
-      buttonSoundGainNode = audioContext.createGain();
-      buttonSoundGainNode.gain.value = 0.3;
-      buttonSoundGainNode.connect(audioContext.destination);
-
-      // Initialize audio visualizer
-      setupAudioVisualizer();
+      // Start playing static
+      staticAudio.play();
       
-      return true;
+      // Initialize visualizer after short delay
+      setTimeout(() => {
+        try {
+          // Initialize visualizer
+          desktopVisualizer = setupDesktopVisualizer();
+        } catch (vizError) {
+          console.error('Error initializing visualizer:', vizError);
+        }
+      }, 1000);
     } catch (error) {
-      console.error('Audio initialization failed:', error);
-      return false;
+      console.error('Error initializing audio:', error);
     }
   }
 
@@ -317,24 +332,6 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     
-    // Calculate signal strength based on proximity (0-5)
-    let signalStrength;
-    if (isFrequencyActive) {
-      signalStrength = 4; // Strong signal when on active frequency
-    } else if (minDistance < 0.3) {
-      // Getting close to an active frequency
-      signalStrength = 3;
-    } else if (minDistance < 0.6) {
-      signalStrength = 2;
-    } else if (minDistance < 1.0) {
-      signalStrength = 1;
-    } else {
-      signalStrength = 0;
-    }
-    
-    // Update signal strength display
-    updateSignalBars();
-    
     // Static gets quieter as we get closer to an active frequency
     let staticVolume;
     if (isFrequencyActive) {
@@ -351,17 +348,17 @@ document.addEventListener('DOMContentLoaded', function() {
       audioContext.currentTime + 0.2
     );
     
-    // Update filter parameters if we have a filter node
-    if (staticFilterNode) {
+    // Update filter parameters if we have a filter node (safely check first)
+    if (window.staticFilterNode) {
       staticFilterNode.frequency.setValueAtTime(staticFilterNode.frequency.value, audioContext.currentTime);
       staticFilterNode.frequency.linearRampToValueAtTime(
-        800 + (1200 * Math.min(minDistance * 3, 1.0)),
+        isFrequencyActive ? 800 : 800 + (1200 * Math.min(minDistance * 3, 1.0)),
         audioContext.currentTime + 0.2
       );
       
       staticFilterNode.Q.setValueAtTime(staticFilterNode.Q.value, audioContext.currentTime);
       staticFilterNode.Q.linearRampToValueAtTime(
-        0.2 + (1.8 * Math.min(minDistance * 3, 1.0)),
+        isFrequencyActive ? 0.2 : 0.2 + (1.8 * Math.min(minDistance * 3, 1.0)),
         audioContext.currentTime + 0.2
       );
     }
@@ -531,85 +528,94 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Create a fake visualizer that responds to incoming messages
   function setupDesktopVisualizer() {
-    // Create canvas for visualizer
-    const visualizerCanvas = document.createElement('canvas');
-    visualizerCanvas.className = 'audio-visualizer';
-    visualizerCanvas.width = 300;
-    visualizerCanvas.height = 60;
-    
-    // Add to the interface - place it near the conversation log
-    document.querySelector('.conversation-log').insertBefore(
-      visualizerCanvas, 
-      document.querySelector('.messages')
-    );
-    
-    // Get context
-    const visualizerContext = visualizerCanvas.getContext('2d');
-    
-    // Draw initial flat line
-    drawFlatLine();
-    
-    // Function to draw a flat line
-    function drawFlatLine() {
-      visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-      visualizerContext.fillStyle = '#222';
-      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-      visualizerContext.beginPath();
-      visualizerContext.strokeStyle = '#444';
-      visualizerContext.moveTo(0, visualizerCanvas.height / 2);
-      visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
-      visualizerContext.stroke();
-    }
-    
-    // Function to simulate activity
-    function simulateActivity(duration = 2000) {
-      let startTime = Date.now();
+    try {
+      // First check if the element exists
+      const conversationLog = document.querySelector('.conversation-log');
+      if (!conversationLog) {
+        console.error('Could not find conversation log element');
+        return { showActivity: () => {} }; // Return dummy function
+      }
       
-      function draw() {
-        const elapsed = Date.now() - startTime;
-        if (elapsed > duration) {
-          drawFlatLine();
-          return;
-        }
-        
-        // Clear canvas
+      // Create canvas for visualizer
+      const visualizerCanvas = document.createElement('canvas');
+      visualizerCanvas.className = 'audio-visualizer';
+      visualizerCanvas.width = 300;
+      visualizerCanvas.height = 60;
+      
+      // Insert at correct position
+      const messagesElement = document.querySelector('.messages');
+      if (messagesElement) {
+        conversationLog.insertBefore(visualizerCanvas, messagesElement);
+      } else {
+        conversationLog.appendChild(visualizerCanvas); // Fallback
+      }
+      
+      // Get context
+      const visualizerContext = visualizerCanvas.getContext('2d');
+      
+      // Draw initial flat line
+      drawFlatLine();
+      
+      // Function to draw a flat line
+      function drawFlatLine() {
         visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
         visualizerContext.fillStyle = '#222';
         visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-        
-        // Draw bars
-        const barCount = 20;
-        const barWidth = visualizerCanvas.width / barCount;
-        
-        for (let i = 0; i < barCount; i++) {
-          // Random height with decay over time
-          const decay = 1 - (elapsed / duration);
-          const randomFactor = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
-          const height = (visualizerCanvas.height * 0.8) * randomFactor * decay;
-          
-          visualizerContext.fillStyle = isFrequencyActive ? '#4caf50' : '#666';
-          visualizerContext.fillRect(
-            i * barWidth,
-            (visualizerCanvas.height - height) / 2,
-            barWidth - 1,
-            height
-          );
-        }
-        
-        requestAnimationFrame(draw);
+        visualizerContext.beginPath();
+        visualizerContext.strokeStyle = '#444';
+        visualizerContext.moveTo(0, visualizerCanvas.height / 2);
+        visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
+        visualizerContext.stroke();
       }
       
-      draw();
+      // Function to simulate activity
+      function simulateActivity(duration = 2000) {
+        let startTime = Date.now();
+        
+        function draw() {
+          const elapsed = Date.now() - startTime;
+          if (elapsed > duration) {
+            drawFlatLine();
+            return;
+          }
+          
+          // Clear canvas
+          visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+          visualizerContext.fillStyle = '#222';
+          visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+          
+          // Draw bars
+          const barCount = 20;
+          const barWidth = visualizerCanvas.width / barCount;
+          
+          for (let i = 0; i < barCount; i++) {
+            // Random height with decay over time
+            const decay = 1 - (elapsed / duration);
+            const randomFactor = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
+            const height = (visualizerCanvas.height * 0.8) * randomFactor * decay;
+            
+            visualizerContext.fillStyle = isFrequencyActive ? '#4caf50' : '#666';
+            visualizerContext.fillRect(
+              i * barWidth,
+              (visualizerCanvas.height - height) / 2,
+              barWidth - 1,
+              height
+            );
+          }
+          
+          requestAnimationFrame(draw);
+        }
+        
+        draw();
+      }
+      
+      return {
+        showActivity: simulateActivity
+      };
+    } catch (error) {
+      console.error('Error setting up desktop visualizer:', error);
+      return { showActivity: () => {} }; // Return dummy function
     }
-    
-    // Monitor for incoming messages and trigger visualization
-    socket.on('ai_response', () => {
-      simulateActivity(3000); // Activity for 3 seconds
-    });
-    
-    return {
-      showActivity: simulateActivity
-    };
   }
 
   // Initialize the application
