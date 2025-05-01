@@ -61,7 +61,25 @@ document.addEventListener('DOMContentLoaded', function() {
     // Enhanced AI response handling
     socket.on('ai_response', (data) => {
       console.log("Received AI response:", data);
-      if (data && data.message) {
+      if (data && data.message && data.message.text) {
+        // Handle nested message format
+        addMessage(data.character, data.message.text, 'character');
+        
+        // Clear any waiting status
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = '';
+          speechStatus.classList.remove('active', 'error');
+        }
+        
+        // Play audio if available in nested format
+        if (data.message.audioPath) {
+          console.log("Playing audio from nested path:", data.message.audioPath);
+          playGeneratedAudio(data.message.audioPath);
+        } else {
+          console.log("No audio path provided in nested message");
+        }
+      } else if (data && data.message) {
         // Handle direct message format
         addMessage(data.character, data.message, 'character');
         
