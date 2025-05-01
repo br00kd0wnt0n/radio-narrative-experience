@@ -62,7 +62,24 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('ai_response', (data) => {
       console.log("Received AI response:", data);
       if (data && data.message) {
+        // Handle direct message format
         addMessage(data.character, data.message, 'character');
+        
+        // Clear any waiting status
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = '';
+          speechStatus.classList.remove('active', 'error');
+        }
+        
+        if (data.audioPath) {
+          playGeneratedAudio(data.audioPath);
+        }
+      } else if (data && typeof data === 'object') {
+        // Handle object format
+        const message = data.message || data.text || JSON.stringify(data);
+        const character = data.character || 'Unknown';
+        addMessage(character, message, 'character');
         
         // Clear any waiting status
         const speechStatus = document.querySelector('.speech-status');
@@ -96,6 +113,18 @@ document.addEventListener('DOMContentLoaded', function() {
       } else if (data && data.message) {
         // Handle direct message format
         addMessage(data.character || 'Unknown', data.message, 'character');
+        
+        // Clear any waiting status
+        const speechStatus = document.querySelector('.speech-status');
+        if (speechStatus) {
+          speechStatus.textContent = '';
+          speechStatus.classList.remove('active', 'error');
+        }
+      } else if (data && typeof data === 'object') {
+        // Handle object format
+        const message = data.message || data.text || JSON.stringify(data);
+        const character = data.character || 'Unknown';
+        addMessage(character, message, 'character');
         
         // Clear any waiting status
         const speechStatus = document.querySelector('.speech-status');
@@ -332,7 +361,13 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const messageText = document.createElement('div');
     messageText.className = 'message-text';
-    messageText.textContent = text;
+    
+    // Handle different text formats
+    if (typeof text === 'object') {
+      messageText.textContent = text.message || text.text || JSON.stringify(text);
+    } else {
+      messageText.textContent = text;
+    }
     
     messageDiv.appendChild(messageInfo);
     messageDiv.appendChild(messageText);
