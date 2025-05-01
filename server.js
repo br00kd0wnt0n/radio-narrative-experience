@@ -677,8 +677,8 @@ async function generateSpeech(text, voiceId) {
         return null;
       }
       
-      // Return just the filename, not the full path
-      const result = { filename };
+      // Return the path relative to the public directory
+      const result = { filename: `/generated/${filename}` };
       console.log('[generateSpeech] Returning result:', result);
       return result;
     } catch (error) {
@@ -950,7 +950,7 @@ async function generateAIResponse(userMessage, character, characterStage) {
     
     const result = {
       text: responseText,
-      audioPath: audioResult ? `/generated/${audioResult.filename}` : null
+      audioPath: audioResult ? audioResult.filename : null
     };
     console.log(`[generateAIResponse] Final response object:`, result);
     
