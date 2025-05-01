@@ -57,4 +57,48 @@
 .mic-indicator.error {
   background-color: #f44336;
   color: white;
+}
+
+/* Speech Recognition Display */
+.speech-display {
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 90%;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #4CAF50;
+  border-radius: 8px;
+  padding: 10px;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  text-align: center;
+  z-index: 1000;
+}
+
+.speech-text {
+  min-height: 24px;
+  margin-bottom: 5px;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.speech-text .interim {
+  color: #4CAF50;
+  font-style: italic;
+}
+
+.speech-status {
+  font-size: 12px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.speech-status.active {
+  color: #4CAF50;
+}
+
+.speech-status.error {
+  color: #f44336;
 } 
