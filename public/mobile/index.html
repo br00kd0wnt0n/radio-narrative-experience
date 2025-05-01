@@ -2,12 +2,259 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Radio Narrative Experience - Mobile</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="mobile.css">
   <script src="/shared/socket.io.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      background: #000;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+    }
+
+    .walkie-talkie {
+      width: 100%;
+      max-width: 400px;
+      background: #1a1a1a;
+      border-radius: 20px;
+      padding: 20px;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .status {
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 14px;
+      color: #888;
+    }
+
+    .status.active {
+      color: #4CAF50;
+    }
+
+    .status.error {
+      color: #f44336;
+    }
+
+    .messages {
+      height: 200px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+      padding: 10px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
+    .message {
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .message.system {
+      background: rgba(255, 193, 7, 0.2);
+      color: #ffc107;
+    }
+
+    .message.user {
+      background: rgba(33, 150, 243, 0.2);
+      color: #2196f3;
+    }
+
+    .message.ai {
+      background: rgba(76, 175, 80, 0.2);
+      color: #4caf50;
+    }
+
+    .speech-display {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .speech-text {
+      font-size: 16px;
+      margin-bottom: 5px;
+      min-height: 24px;
+    }
+
+    .speech-status {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .speech-status.active {
+      color: #4CAF50;
+    }
+
+    .speech-status.error {
+      color: #f44336;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    .pairing {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .pairing input {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-size: 16px;
+      text-align: center;
+      letter-spacing: 2px;
+    }
+
+    .pairing button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      background: #2196f3;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .pairing button:hover {
+      background: #1976d2;
+    }
+
+    .push-to-talk {
+      width: 100%;
+      height: 60px;
+      border: none;
+      border-radius: 30px;
+      background: #f44336;
+      color: #fff;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .push-to-talk:active,
+    .push-to-talk.active {
+      background: #d32f2f;
+      transform: scale(0.98);
+    }
+
+    .push-to-talk:disabled {
+      background: #666;
+      cursor: not-allowed;
+    }
+
+    .permission-button {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      border: none;
+      border-radius: 5px;
+      background: #2196f3;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 1000;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+
+    .transmission-indicator {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #f44336;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .transmission-indicator.active {
+      opacity: 1;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.7; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Mobile-specific styles */
+    @media (max-width: 480px) {
+      body {
+        padding: 10px;
+      }
+
+      .walkie-talkie {
+        padding: 15px;
+      }
+
+      .messages {
+        height: 150px;
+      }
+
+      .push-to-talk {
+        height: 50px;
+        font-size: 16px;
+      }
+
+      .pairing input {
+        font-size: 14px;
+      }
+
+      .pairing button {
+        font-size: 14px;
+        padding: 10px 15px;
+      }
+    }
+
+    /* Prevent text selection */
+    .no-select {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -15,8 +262,8 @@
       <div class="display">
         <div class="status" id="status">Disconnected</div>
         <div class="pairing">
-          <input type="text" id="pairing-code" placeholder="Enter pairing code">
-          <button id="pair-button">Pair</button>
+          <input type="text" id="pairing-code" placeholder="Enter pairing code" class="no-select">
+          <button id="pair-button" class="no-select">Pair</button>
         </div>
         <div class="active-frequency" id="active-frequency">No active frequency</div>
       </div>
@@ -28,7 +275,7 @@
         <div class="speech-status">Ready</div>
       </div>
       <div class="controls">
-        <button id="push-to-talk" class="push-to-talk">Push to Talk</button>
+        <button id="push-to-talk" class="push-to-talk no-select" disabled>Push to Talk</button>
       </div>
     </div>
     <div class="messages" id="messages"></div>

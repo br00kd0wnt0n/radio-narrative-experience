@@ -363,33 +363,6 @@ document.addEventListener('DOMContentLoaded', function() {
     messagesElement.scrollTop = messagesElement.scrollHeight;
   }
   
-  // Update setupPushToTalk function to use new button sounds
-  function setupPushToTalk() {
-    pushToTalkButton.addEventListener('mousedown', (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-      startTransmitting(e);
-      playButtonSound('start');
-    });
-    
-    pushToTalkButton.addEventListener('touchstart', (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-      startTransmitting(e);
-      playButtonSound('start');
-    });
-    
-    pushToTalkButton.addEventListener('mouseup', (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-      stopTransmitting(e);
-      playButtonSound('stop');
-    });
-    
-    pushToTalkButton.addEventListener('touchend', (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-      stopTransmitting(e);
-      playButtonSound('stop');
-    });
-  }
-  
   // Initialize speech recognition
   function initSpeechRecognition() {
     if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
@@ -406,6 +379,7 @@ document.addEventListener('DOMContentLoaded', function() {
       speechRecognition.maxAlternatives = 3;
       speechRecognition.lang = 'en-US';
 
+      // Add mobile-specific error handling
       speechRecognition.onstart = function() {
         console.log("Speech recognition started");
         const speechStatus = document.querySelector('.speech-status');
@@ -578,6 +552,37 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
+  // Update setupPushToTalk function to use new button sounds
+  function setupPushToTalk() {
+    // Prevent default touch behavior
+    pushToTalkButton.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (!isPaired || !isFrequencyActive) return;
+      startTransmitting(e);
+      playButtonSound('start');
+    }, { passive: false });
+    
+    pushToTalkButton.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (!isPaired || !isFrequencyActive) return;
+      stopTransmitting(e);
+      playButtonSound('stop');
+    }, { passive: false });
+    
+    // Keep mouse events for desktop
+    pushToTalkButton.addEventListener('mousedown', (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+      startTransmitting(e);
+      playButtonSound('start');
+    });
+    
+    pushToTalkButton.addEventListener('mouseup', (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+      stopTransmitting(e);
+      playButtonSound('stop');
+    });
+  }
+  
   // Start audio transmission
   async function startTransmitting(e) {
     e.preventDefault();
@@ -618,6 +623,10 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       
       try {
+        // Ensure we're not already listening
+        if (speechRecognition.state === 'listening') {
+          speechRecognition.stop();
+        }
         speechRecognition.start();
         console.log("Speech recognition started successfully");
       } catch (error) {
@@ -1044,11 +1053,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initially disable push-to-talk until paired and on active frequency
     pushToTalkButton.disabled = true;
-    
-    // Initialize speech recognition
-    if (compatibilityCheck.speechRecognition) {
-      initSpeechRecognition();
-    }
     
     // Initialize speech UI
     initSpeechUI();
