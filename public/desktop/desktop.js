@@ -710,53 +710,94 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Function to play generated audio with radio effects
   function playGeneratedAudio(audioPath) {
+    console.log('Attempting to play audio from path:', audioPath);
+    
+    if (!audioPath) {
+      console.error('No audio path provided');
+      addMessage('SYSTEM', 'No audio available for this transmission', 'system');
+      return;
+    }
+
     // Create audio element
     const audioElement = new Audio(audioPath);
     
-    // Prepare audio nodes
-    const source = audioContext.createMediaElementSource(audioElement);
-    
-    // Create radio effect filter chain
-    const bandpass = audioContext.createBiquadFilter();
-    bandpass.type = "bandpass";
-    bandpass.frequency.value = 1800;
-    bandpass.Q.value = 0.7;
-    
-    const highpass = audioContext.createBiquadFilter();
-    highpass.type = "highpass";
-    highpass.frequency.value = 500;
-    
-    const lowpass = audioContext.createBiquadFilter();
-    lowpass.type = "lowpass";
-    lowpass.frequency.value = 2500;
-    
-    // Create distortion for radio "crunch"
-    const distortion = audioContext.createWaveShaper();
-    distortion.curve = createDistortionCurve(20);
-    distortion.oversample = "4x";
-    
-    // Lower static volume during speech
-    if (staticGainNode) {
-      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
-      staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.2);
-    }
-    
-    // Connect nodes
-    source.connect(bandpass);
-    bandpass.connect(highpass);
-    highpass.connect(lowpass);
-    lowpass.connect(distortion);
-    distortion.connect(audioContext.destination);
-    
-    // Play audio
-    audioElement.play();
-    
-    // Restore static volume when finished
-    audioElement.onended = function() {
+    // Add error handling for audio loading
+    audioElement.onerror = function(e) {
+      console.error('Error loading audio:', e);
+      addMessage('SYSTEM', 'Error playing audio transmission', 'system');
       if (staticGainNode) {
         adjustStaticVolume();
       }
     };
+
+    // Add loading handling
+    audioElement.onloadstart = function() {
+      console.log('Audio loading started');
+    };
+
+    audioElement.oncanplay = function() {
+      console.log('Audio can play');
+    };
+    
+    // Prepare audio nodes
+    try {
+      const source = audioContext.createMediaElementSource(audioElement);
+      
+      // Create radio effect filter chain
+      const bandpass = audioContext.createBiquadFilter();
+      bandpass.type = "bandpass";
+      bandpass.frequency.value = 1800;
+      bandpass.Q.value = 0.7;
+      
+      const highpass = audioContext.createBiquadFilter();
+      highpass.type = "highpass";
+      highpass.frequency.value = 500;
+      
+      const lowpass = audioContext.createBiquadFilter();
+      lowpass.type = "lowpass";
+      lowpass.frequency.value = 2500;
+      
+      // Create distortion for radio "crunch"
+      const distortion = audioContext.createWaveShaper();
+      distortion.curve = createDistortionCurve(20);
+      distortion.oversample = "4x";
+      
+      // Lower static volume during speech
+      if (staticGainNode) {
+        staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+        staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.2);
+      }
+      
+      // Connect nodes
+      source.connect(bandpass);
+      bandpass.connect(highpass);
+      highpass.connect(lowpass);
+      lowpass.connect(distortion);
+      distortion.connect(audioContext.destination);
+      
+      // Play audio
+      audioElement.play().catch(error => {
+        console.error('Error playing audio:', error);
+        addMessage('SYSTEM', 'Error playing audio transmission', 'system');
+        if (staticGainNode) {
+          adjustStaticVolume();
+        }
+      });
+      
+      // Restore static volume when finished
+      audioElement.onended = function() {
+        console.log('Audio playback finished');
+        if (staticGainNode) {
+          adjustStaticVolume();
+        }
+      };
+    } catch (error) {
+      console.error('Error setting up audio processing:', error);
+      addMessage('SYSTEM', 'Error processing audio transmission', 'system');
+      if (staticGainNode) {
+        adjustStaticVolume();
+      }
+    }
   }
 
   // Update startTransmitting and stopTransmitting to toggle indicator

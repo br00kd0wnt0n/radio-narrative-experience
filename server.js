@@ -8,6 +8,7 @@ const cors = require('cors');
 require('dotenv').config();
 const elevenLabs = require('elevenlabs-js');
 const { Server } = require('socket.io');
+const fs = require('fs');
 
 // Set your API key
 elevenLabs.setApiKey(process.env.ELEVENLABS_API_KEY);
@@ -539,6 +540,13 @@ function generatePairingCode() {
 // Function to generate speech using ElevenLabs
 async function generateSpeech(text, voiceId) {
   try {
+    console.log(`Generating speech for text: "${text}" with voice ID: ${voiceId}`);
+    
+    if (!text || !voiceId) {
+      console.error('Missing required parameters for speech generation:', { text, voiceId });
+      return null;
+    }
+
     const response = await elevenLabs.textToSpeech(
       voiceId, 
       text, 
@@ -549,25 +557,46 @@ async function generateSpeech(text, voiceId) {
       }
     );
     
+    if (!response) {
+      console.error('No response from ElevenLabs API');
+      return null;
+    }
+    
     // Create a unique filename for this audio
     const timestamp = Date.now();
     const filename = `${timestamp}.mp3`;
-    const filePath = `public/generated/${filename}`;
+    const dir = path.join(__dirname, 'public', 'generated');
+    const filePath = path.join(dir, filename);
     
     // Ensure the directory exists
-    const fs = require('fs');
-    const dir = 'public/generated';
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      await fs.promises.mkdir(dir, { recursive: true });
+      console.log(`Ensured directory exists: ${dir}`);
+    } catch (error) {
+      console.error('Error creating directory:', error);
+      return null;
     }
     
     // Save the file
-    await response.saveFile(filePath);
-    
-    return {
-      filePath,
-      filename
-    };
+    try {
+      await response.saveFile(filePath);
+      console.log(`Audio file saved successfully at: ${filePath}`);
+      
+      // Verify the file exists and is not empty
+      const stats = await fs.promises.stat(filePath);
+      if (stats.size === 0) {
+        console.error('Generated audio file is empty');
+        return null;
+      }
+      
+      return {
+        filePath,
+        filename
+      };
+    } catch (error) {
+      console.error('Error saving audio file:', error);
+      return null;
+    }
   } catch (error) {
     console.error("Error generating speech:", error);
     return null;
