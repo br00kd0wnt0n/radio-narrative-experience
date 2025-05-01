@@ -25,6 +25,10 @@ document.addEventListener('DOMContentLoaded', function() {
   let speechRecognition = null;
   let buttonSoundGainNode = null;
   let recognitionTimeout = null;
+  let audioAnalyser = null;
+  let visualizerCanvas = null;
+  let visualizerContext = null;
+  let visualizerData = null;
   
   // Connect to WebSocket server
   function connectSocket() {
@@ -148,6 +152,9 @@ document.addEventListener('DOMContentLoaded', function() {
       buttonSoundGainNode = audioContext.createGain();
       buttonSoundGainNode.gain.value = 0.3;
       buttonSoundGainNode.connect(audioContext.destination);
+      
+      // Initialize audio visualizer
+      setupAudioVisualizer();
       
       return true;
     } catch (error) {
@@ -433,6 +440,90 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
+  // Add audio visualizer setup
+  function setupAudioVisualizer() {
+    // Create canvas for visualizer
+    visualizerCanvas = document.createElement('canvas');
+    visualizerCanvas.className = 'audio-visualizer';
+    visualizerCanvas.width = 150;
+    visualizerCanvas.height = 40;
+    
+    // Add to the interface
+    const container = document.createElement('div');
+    container.className = 'visualizer-container';
+    container.appendChild(visualizerCanvas);
+    
+    document.querySelector('.walkie-talkie').insertBefore(
+      container, 
+      document.querySelector('.controls')
+    );
+    
+    // Get context
+    visualizerContext = visualizerCanvas.getContext('2d');
+    
+    // Initialize visualizer when audio context is ready
+    if (audioContext) {
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 32; // Small size for simple visualization
+      visualizerData = new Uint8Array(audioAnalyser.frequencyBinCount);
+    }
+  }
+  
+  // Function to start visualizing audio
+  function startAudioVisualization(stream) {
+    if (!audioContext || !audioAnalyser) return;
+    
+    // Connect the stream to the analyzer
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(audioAnalyser);
+    
+    // Start drawing
+    drawVisualizer();
+  }
+  
+  // Function to draw the visualizer
+  function drawVisualizer() {
+    if (!isTransmitting || !audioAnalyser || !visualizerContext) {
+      // If not transmitting, draw flat line
+      visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.fillStyle = '#333';
+      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.beginPath();
+      visualizerContext.strokeStyle = '#666';
+      visualizerContext.moveTo(0, visualizerCanvas.height / 2);
+      visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
+      visualizerContext.stroke();
+      return;
+    }
+    
+    // Get frequency data
+    audioAnalyser.getByteFrequencyData(visualizerData);
+    
+    // Clear canvas
+    visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+    visualizerContext.fillStyle = '#333';
+    visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+    
+    // Draw bars
+    const barWidth = visualizerCanvas.width / visualizerData.length;
+    visualizerContext.fillStyle = '#4caf50';
+    
+    for (let i = 0; i < visualizerData.length; i++) {
+      const value = visualizerData[i] / 255;
+      const barHeight = value * visualizerCanvas.height;
+      
+      visualizerContext.fillRect(
+        i * barWidth,
+        visualizerCanvas.height - barHeight,
+        barWidth - 1,
+        barHeight
+      );
+    }
+    
+    // Continue animation
+    requestAnimationFrame(drawVisualizer);
+  }
+  
   // Start audio transmission
   async function startTransmitting(e) {
     e.preventDefault();
@@ -446,42 +537,48 @@ document.addEventListener('DOMContentLoaded', function() {
     pushToTalkButton.classList.add('active');
     document.querySelector('.transmission-indicator').classList.add('active');
     
+    // Play button sound instead of static
+    playButtonSound('start');
+    
     console.log("Starting transmission...");
     
-    // Lower static volume during transmission
-    if (staticGainNode) {
-      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
-      staticGainNode.gain.linearRampToValueAtTime(0.05, audioContext.currentTime + 0.2);
-    }
+    // Clear previous speech text
+    const speechText = document.querySelector('.speech-text');
+    if (speechText) speechText.textContent = '';
     
-    // Play radio start sound
-    playTransmissionSound('start');
-    
-    // Start recording audio
-    if (mediaRecorder && mediaRecorder.state === 'inactive') {
-      audioChunks = [];
-      mediaRecorder.start();
-    }
-    
-    // Start speech recognition
-    if (speechRecognition) {
-      try {
-        speechRecognition.start();
-      } catch (error) {
-        console.error('Speech recognition start error:', error);
-      }
-    } else {
-      // Fallback to text input for unsupported browsers
-      const userMessage = prompt('Enter your message:');
+    // Request microphone access
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      if (userMessage && userMessage.trim() !== '') {
-        console.log("Sending message:", userMessage);
-        addMessage('YOU', userMessage, 'user');
+      // Start visualizer
+      startAudioVisualization(stream);
+      
+      // Start speech recognition
+      if (speechRecognition) {
+        try {
+          speechRecognition.start();
+        } catch (error) {
+          console.error('Speech recognition start error:', error);
+        }
+      } else {
+        // Fallback to text input
+        const userMessage = prompt('Enter your message:');
         
-        if (socket) {
-          socket.emit('audio_message', { message: userMessage });
+        if (userMessage && userMessage.trim() !== '') {
+          console.log("Sending message:", userMessage);
+          addMessage('YOU', userMessage, 'user');
+          
+          if (socket) {
+            socket.emit('audio_message', { message: userMessage });
+          }
         }
       }
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      addMessage('SYSTEM', `Microphone error: ${error.message}`, 'system');
+      isTransmitting = false;
+      pushToTalkButton.classList.remove('active');
+      document.querySelector('.transmission-indicator').classList.remove('active');
     }
   }
   
@@ -536,13 +633,8 @@ document.addEventListener('DOMContentLoaded', function() {
     pushToTalkButton.classList.remove('active');
     document.querySelector('.transmission-indicator').classList.remove('active');
     
-    // Play radio end sound
-    playTransmissionSound('end');
-    
-    // Stop recording
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-      mediaRecorder.stop();
-    }
+    // Play button sound
+    playButtonSound('end');
     
     // Stop speech recognition
     if (speechRecognition) {
@@ -553,11 +645,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     
-    // Restore static volume
-    if (staticGainNode) {
-      staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
-      staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.3);
-    }
+    // Update visualizer (it will draw flat line on next frame)
   }
   
   // Play radio transmission start/end sounds
