@@ -1077,6 +1077,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
+  // Helper function to clear speech status
+  function clearSpeechStatus() {
+    const speechStatus = document.querySelector('.speech-status');
+    if (speechStatus) {
+      speechStatus.textContent = '';
+      speechStatus.classList.remove('active', 'error');
+    }
+  }
+  
   // Initialize the application
   function init() {
     // Add transmission indicator
