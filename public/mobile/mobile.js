@@ -34,9 +34,9 @@ document.addEventListener('DOMContentLoaded', function() {
   function connectSocket() {
     socket = io();
     
-    // Log WebSocket connection attempts
+    // Add connection monitoring
     socket.on('connect', () => {
-      console.log('Successfully connected to server');
+      console.log("Socket connected:", socket.id);
       statusElement.textContent = 'Connected';
       statusElement.style.color = '#4caf50';
       
@@ -45,9 +45,34 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     socket.on('connect_error', (error) => {
-      console.error('WebSocket connection error:', error);
+      console.error("Socket connection error:", error);
       statusElement.textContent = 'Connection failed';
       statusElement.style.color = '#f44336';
+      addMessage('SYSTEM', 'Connection error. Please check your network.', 'system');
+    });
+    
+    socket.on('disconnect', (reason) => {
+      console.log("Socket disconnected:", reason);
+      statusElement.textContent = 'Disconnected';
+      statusElement.style.color = '#f44336';
+      addMessage('SYSTEM', `Disconnected: ${reason}. Try reloading.`, 'system');
+    });
+    
+    // Enhanced AI response handling
+    socket.on('ai_response', (data) => {
+      console.log("Received AI response:", data);
+      if (data && data.message) {
+        addMessage(data.character, data.message, 'character');
+        
+        if (data.audioPath) {
+          playGeneratedAudio(data.audioPath);
+        } else {
+          addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
+        }
+      } else {
+        console.error("Invalid AI response data:", data);
+        addMessage('SYSTEM', 'Received invalid response from server', 'system');
+      }
     });
     
     socket.on('paired', (data) => {
@@ -103,18 +128,6 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
     
-    socket.on('ai_response', (data) => {
-      console.log("Received AI response:", data);
-      addMessage(data.character, data.message, 'character');
-      
-      if (data.audioPath) {
-        playGeneratedAudio(data.audioPath);
-      } else {
-        // Fallback to the simulated audio notification
-        addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
-      }
-    });
-    
     socket.on('desktop_disconnected', () => {
       isPaired = false;
       statusElement.textContent = 'Desktop disconnected';
@@ -128,15 +141,6 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // Add system message
       addMessage('SYSTEM', 'Desktop device disconnected', 'system');
-    });
-    
-    socket.on('disconnect', () => {
-      isPaired = false;
-      statusElement.textContent = 'Disconnected';
-      statusElement.style.color = '#f44336';
-      
-      // Add system message
-      addMessage('SYSTEM', 'Disconnected from server', 'system');
     });
   }
   
@@ -167,90 +171,88 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  // Modern approach using AudioWorkletNode
-  async function initAudioWorklet() {
+  // Set up audio visualizer for mobile
+  function setupAudioVisualizer() {
     try {
-      // We need to create and load a worklet processor
-      const workletBlob = new Blob([`
-        class NoiseGenerator extends AudioWorkletProcessor {
-          process(inputs, outputs) {
-            const output = outputs[0];
-            
-            for (let channel = 0; channel < output.length; ++channel) {
-              const outputChannel = output[channel];
-              for (let i = 0; i < outputChannel.length; ++i) {
-                // Generate white noise
-                outputChannel[i] = Math.random() * 2 - 1;
-              }
-            }
-            
-            // Return true to keep the processor alive
-            return true;
-          }
-        }
-        
-        registerProcessor('noise-generator', NoiseGenerator);
-      `], { type: 'application/javascript' });
+      // Create canvas for visualizer
+      visualizerCanvas = document.createElement('canvas');
+      visualizerCanvas.width = 200;
+      visualizerCanvas.height = 50;
+      visualizerCanvas.style.width = '100%';
+      visualizerCanvas.style.height = '50px';
+      visualizerCanvas.style.backgroundColor = '#222';
+      visualizerCanvas.style.borderRadius = '4px';
+      visualizerCanvas.style.marginBottom = '10px';
       
-      const workletURL = URL.createObjectURL(workletBlob);
+      // Insert canvas before messages container
+      const messagesContainer = document.getElementById('messages');
+      messagesContainer.parentNode.insertBefore(visualizerCanvas, messagesContainer);
       
-      // Load the worklet processor
-      await audioContext.audioWorklet.addModule(workletURL);
+      // Get canvas context
+      visualizerContext = visualizerCanvas.getContext('2d');
       
-      // Create noise generator
-      const noiseNode = new AudioWorkletNode(audioContext, 'noise-generator');
+      // Create analyzer node
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 256;
       
-      // Create filter to shape noise into more "radio static" sound
-      const filter = audioContext.createBiquadFilter();
-      filter.type = 'bandpass';
-      filter.frequency.value = 1000;
-      filter.Q.value = 0.5;
+      // Create data array for visualization
+      visualizerData = new Uint8Array(audioAnalyser.frequencyBinCount);
       
-      // Connect nodes
-      noiseNode.connect(filter);
-      filter.connect(staticGainNode);
-      staticGainNode.connect(audioContext.destination);
-      
-      console.log("Using modern AudioWorkletNode for noise generation");
-      
-      // Clean up the blob URL
-      URL.revokeObjectURL(workletURL);
+      console.log('Audio visualizer setup complete');
     } catch (error) {
-      console.error("Error initializing AudioWorklet:", error);
-      // Fall back to legacy method if AudioWorklet fails
-      initLegacyNoiseGenerator();
+      console.error('Error setting up audio visualizer:', error);
+      throw error;
     }
   }
   
-  // Legacy approach using ScriptProcessorNode (with deprecation warning)
-  function initLegacyNoiseGenerator() {
-    console.warn("Using deprecated ScriptProcessorNode. This will be removed in future browser versions.");
+  // Start audio visualization with stream
+  function startAudioVisualization(stream) {
+    if (!audioContext || !audioAnalyser) {
+      console.error('Audio context or analyzer not initialized');
+      return;
+    }
     
-    const bufferSize = 4096;
-    const noiseNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+    try {
+      // Create source from stream
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(audioAnalyser);
+      
+      // Start drawing
+      drawVisualizer();
+    } catch (error) {
+      console.error('Error starting audio visualization:', error);
+    }
+  }
+  
+  // Draw visualizer
+  function drawVisualizer() {
+    if (!visualizerCanvas || !visualizerContext || !audioAnalyser) {
+      return;
+    }
     
-    // Generate white noise
-    noiseNode.onaudioprocess = function(e) {
-      const output = e.outputBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
-      }
-    };
+    // Get frequency data
+    audioAnalyser.getByteFrequencyData(visualizerData);
     
-    // Create filter to shape noise into more "radio static" sound
-    const filter = audioContext.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.value = 1000;
-    filter.Q.value = 0.5;
+    // Clear canvas
+    visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
     
-    // Connect nodes
-    noiseNode.connect(filter);
-    filter.connect(staticGainNode);
-    staticGainNode.connect(audioContext.destination);
+    // Draw bars
+    const barWidth = (visualizerCanvas.width / visualizerData.length) * 2.5;
+    let x = 0;
     
-    // Keep reference to nodes to prevent garbage collection
-    window.noiseNode = noiseNode;
-    window.staticFilter = filter;
+    for (let i = 0; i < visualizerData.length; i++) {
+      const barHeight = (visualizerData[i] / 255) * visualizerCanvas.height;
+      
+      // Use different colors based on frequency
+      const hue = (i / visualizerData.length) * 360;
+      visualizerContext.fillStyle = `hsl(${hue}, 100%, 50%)`;
+      
+      visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+      x += barWidth + 1;
+    }
+    
+    // Continue animation
+    requestAnimationFrame(drawVisualizer);
   }
   
   // Add message to the conversation log
@@ -326,9 +328,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Handle interim results for visual feedback
     speechRecognition.onresult = function(event) {
+      console.log("Speech recognition result:", event);
       const speechText = document.querySelector('.speech-text');
       
-      // Get the transcript (including interim results)
+      // Get the transcript
       let interimTranscript = '';
       let finalTranscript = '';
       
@@ -350,21 +353,32 @@ document.addEventListener('DOMContentLoaded', function() {
       if (finalTranscript) {
         speechText.textContent = finalTranscript;
         
-        // Clear any previous timeout
-        if (recognitionTimeout) {
-          clearTimeout(recognitionTimeout);
-        }
-        
-        // Send the final transcript after a short delay
-        recognitionTimeout = setTimeout(() => {
-          if (finalTranscript.trim() !== '') {
-            addMessage('YOU', finalTranscript, 'user');
+        // Send the final transcript
+        if (finalTranscript.trim() !== '') {
+          addMessage('YOU', finalTranscript, 'user');
+          
+          if (socket && socket.connected) {
+            console.log("Sending message to server:", finalTranscript);
             
-            if (socket) {
-              socket.emit('audio_message', { message: finalTranscript });
-            }
+            // Add success/failure handlers
+            socket.emit('audio_message', { message: finalTranscript }, (response) => {
+              if (response && response.success) {
+                console.log("Server acknowledged message");
+              }
+            });
+            
+            // Add timeout to check if we got a response
+            setTimeout(() => {
+              if (document.querySelector('.message:last-child').textContent !== finalTranscript) {
+                console.log("No AI response received within timeout, might be connection issues");
+                addMessage('SYSTEM', 'Waiting for response...', 'system');
+              }
+            }, 3000);
+          } else {
+            console.error("Socket not connected or invalid");
+            addMessage('SYSTEM', 'Connection issue. Try reloading the page.', 'system');
           }
-        }, 500);
+        }
       }
     };
     
@@ -442,108 +456,6 @@ document.addEventListener('DOMContentLoaded', function() {
       addMessage('SYSTEM', 'Could not access microphone. Please check permissions.', 'system');
       return false;
     }
-  }
-  
-  // Add audio visualizer setup
-  function setupAudioVisualizer() {
-    try {
-      // Create canvas for visualizer
-      visualizerCanvas = document.createElement('canvas');
-      visualizerCanvas.className = 'audio-visualizer';
-      visualizerCanvas.width = 150;
-      visualizerCanvas.height = 40;
-      
-      // Add to the interface
-      const container = document.createElement('div');
-      container.className = 'visualizer-container';
-      container.appendChild(visualizerCanvas);
-      
-      // Find the walkie-talkie element
-      const walkieTalkie = document.querySelector('.walkie-talkie');
-      if (!walkieTalkie) {
-        console.error('Could not find walkie-talkie element');
-        return false;
-      }
-      
-      // Find the controls element for positioning
-      const controls = document.querySelector('.controls');
-      if (controls) {
-        walkieTalkie.insertBefore(container, controls);
-      } else {
-        // Fallback to appending
-        walkieTalkie.appendChild(container);
-      }
-      
-      // Get context
-      visualizerContext = visualizerCanvas.getContext('2d');
-      
-      // Initialize visualizer when audio context is ready
-      if (audioContext) {
-        audioAnalyser = audioContext.createAnalyser();
-        audioAnalyser.fftSize = 32; // Small size for simple visualization
-        visualizerData = new Uint8Array(audioAnalyser.frequencyBinCount);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Error setting up audio visualizer:', error);
-      return false;
-    }
-  }
-  
-  // Function to start visualizing audio
-  function startAudioVisualization(stream) {
-    if (!audioContext || !audioAnalyser) return;
-    
-    // Connect the stream to the analyzer
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(audioAnalyser);
-    
-    // Start drawing
-    drawVisualizer();
-  }
-  
-  // Function to draw the visualizer
-  function drawVisualizer() {
-    if (!isTransmitting || !audioAnalyser || !visualizerContext) {
-      // If not transmitting, draw flat line
-      visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-      visualizerContext.fillStyle = '#333';
-      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-      visualizerContext.beginPath();
-      visualizerContext.strokeStyle = '#666';
-      visualizerContext.moveTo(0, visualizerCanvas.height / 2);
-      visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
-      visualizerContext.stroke();
-      return;
-    }
-    
-    // Get frequency data
-    audioAnalyser.getByteFrequencyData(visualizerData);
-    
-    // Clear canvas
-    visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-    visualizerContext.fillStyle = '#333';
-    visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-    
-    // Draw bars
-    const barWidth = visualizerCanvas.width / visualizerData.length;
-    visualizerContext.fillStyle = '#4caf50';
-    
-    for (let i = 0; i < visualizerData.length; i++) {
-      const value = visualizerData[i] / 255;
-      const barHeight = value * visualizerCanvas.height;
-      
-      visualizerContext.fillRect(
-        i * barWidth,
-        visualizerCanvas.height - barHeight,
-        barWidth - 1,
-        barHeight
-      );
-    }
-    
-    // Continue animation
-    requestAnimationFrame(drawVisualizer);
   }
   
   // Start audio transmission
@@ -624,9 +536,26 @@ document.addEventListener('DOMContentLoaded', function() {
             if (finalTranscript.trim() !== '') {
               addMessage('YOU', finalTranscript, 'user');
               
-              if (socket) {
-                socket.emit('audio_message', { message: finalTranscript });
-                console.log("Sent recognized message:", finalTranscript);
+              if (socket && socket.connected) {
+                console.log("Sending message to server:", finalTranscript);
+                
+                // Add success/failure handlers
+                socket.emit('audio_message', { message: finalTranscript }, (response) => {
+                  if (response && response.success) {
+                    console.log("Server acknowledged message");
+                  }
+                });
+                
+                // Add timeout to check if we got a response
+                setTimeout(() => {
+                  if (document.querySelector('.message:last-child').textContent !== finalTranscript) {
+                    console.log("No AI response received within timeout, might be connection issues");
+                    addMessage('SYSTEM', 'Waiting for response...', 'system');
+                  }
+                }, 3000);
+              } else {
+                console.error("Socket not connected or invalid");
+                addMessage('SYSTEM', 'Connection issue. Try reloading the page.', 'system');
               }
             }
           }

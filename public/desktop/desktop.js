@@ -16,13 +16,14 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('signal-bar-5')
   ];
   
-  // Radio state
+  // State
   let rotation = 0; // Current rotation of the tuning knob in degrees
   let currentFrequency = 87.5; // Starting frequency
   let isDragging = false;
   let lastMouseX = 0;
   let isFrequencyActive = false;
   let socket = null;
+  let desktopVisualizer = null; // Add missing variable
   
   // Active frequencies that have content
   const activeFrequencies = ['87.5', '89.3', '92.1', '95.7', '98.7', '101.2', '104.3', '107.9', '110.5'];
@@ -31,13 +32,45 @@ document.addEventListener('DOMContentLoaded', function() {
   function connectSocket() {
     socket = io();
     
+    // Add connection monitoring
     socket.on('connect', () => {
-      console.log('Connected to server');
+      console.log("Socket connected:", socket.id);
       statusElement.textContent = 'Connected';
       statusElement.style.color = '#4caf50';
       
       // Register as desktop client
       socket.emit('register', { type: 'desktop' });
+    });
+    
+    socket.on('connect_error', (error) => {
+      console.error("Socket connection error:", error);
+      statusElement.textContent = 'Connection failed';
+      statusElement.style.color = '#f44336';
+      addMessage('SYSTEM', 'Connection error. Please check your network.', 'system');
+    });
+    
+    socket.on('disconnect', (reason) => {
+      console.log("Socket disconnected:", reason);
+      statusElement.textContent = 'Disconnected';
+      statusElement.style.color = '#f44336';
+      addMessage('SYSTEM', `Disconnected: ${reason}. Try reloading.`, 'system');
+    });
+    
+    // Enhanced AI response handling
+    socket.on('ai_response', (data) => {
+      console.log("Received AI response:", data);
+      if (data && data.message) {
+        addMessage(data.character, data.message, 'character');
+        
+        if (data.audioPath) {
+          playGeneratedAudio(data.audioPath);
+        } else {
+          addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
+        }
+      } else {
+        console.error("Invalid AI response data:", data);
+        addMessage('SYSTEM', 'Received invalid response from server', 'system');
+      }
     });
     
     socket.on('registered', (data) => {
@@ -97,28 +130,10 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
     
-    socket.on('ai_response', (data) => {
-      console.log("Received AI response:", data);
-      addMessage(data.character, data.message, 'character');
-      
-      if (data.audioPath) {
-        playGeneratedAudio(data.audioPath);
-      } else {
-        // Fallback to the simulated audio notification
-        addMessage('SYSTEM', 'Playing transmission audio (simulated for prototype)', 'system');
-      }
-    });
-    
     socket.on('mobile_disconnected', () => {
       statusElement.textContent = 'Connected (Mobile disconnected)';
       statusElement.style.color = '#ff9800';
       addMessage('SYSTEM', 'Mobile device disconnected', 'system');
-    });
-    
-    socket.on('disconnect', () => {
-      statusElement.textContent = 'Disconnected';
-      statusElement.style.color = '#f44336';
-      addMessage('SYSTEM', 'Disconnected from server', 'system');
     });
   }
   
