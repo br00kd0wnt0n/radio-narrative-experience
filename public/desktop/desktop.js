@@ -140,26 +140,38 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       
-      // Set up audio source from the static audio element
-      const source = audioContext.createMediaStreamSource(staticAudio);
+      // Check if static audio element exists and is valid
+      if (!staticAudio || staticAudio.error) {
+        console.error('Static audio element not found or has error');
+        return;
+      }
       
-      // Create gain node for volume control
-      staticGainNode = audioContext.createGain();
-      staticGainNode.gain.value = 0.7;
-      
-      // Create a filter for the static
-      window.staticFilterNode = audioContext.createBiquadFilter();
-      window.staticFilterNode.type = 'bandpass';
-      window.staticFilterNode.frequency.value = 1000;
-      window.staticFilterNode.Q.value = 0.5;
-      
-      // Connect nodes
-      source.connect(window.staticFilterNode);
-      window.staticFilterNode.connect(staticGainNode);
-      staticGainNode.connect(audioContext.destination);
-      
-      // Start playing static
-      staticAudio.play();
+      try {
+        // Correct way to connect an audio element 
+        const source = audioContext.createMediaElementSource(staticAudio);
+        
+        // Create gain node for volume control
+        staticGainNode = audioContext.createGain();
+        staticGainNode.gain.value = 0.7;
+        
+        // Create a filter for the static
+        window.staticFilterNode = audioContext.createBiquadFilter();
+        window.staticFilterNode.type = 'bandpass';
+        window.staticFilterNode.frequency.value = 1000;
+        window.staticFilterNode.Q.value = 0.5;
+        
+        // Connect nodes
+        source.connect(window.staticFilterNode);
+        window.staticFilterNode.connect(staticGainNode);
+        staticGainNode.connect(audioContext.destination);
+        
+        // Start playing static
+        staticAudio.play().catch(e => {
+          console.error('Could not play static audio:', e);
+        });
+      } catch (audioError) {
+        console.error('Error initializing audio:', audioError);
+      }
       
       // Initialize visualizer after short delay
       setTimeout(() => {
@@ -167,11 +179,11 @@ document.addEventListener('DOMContentLoaded', function() {
           // Initialize visualizer
           desktopVisualizer = setupDesktopVisualizer();
         } catch (vizError) {
-          console.error('Error initializing visualizer:', vizError);
+          console.error('Visualizer initialization failed:', vizError);
         }
-      }, 1000);
+      }, 500);
     } catch (error) {
-      console.error('Error initializing audio:', error);
+      console.error('Audio context initialization failed:', error);
     }
   }
 
