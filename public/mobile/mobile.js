@@ -129,35 +129,18 @@ document.addEventListener('DOMContentLoaded', function() {
       if (data.message && data.message.text) {
         // Update UI with the message
         addMessage(data.character || 'AI', data.message.text, 'character');
-        
-        // Play audio if available
-        if (data.message.audioPath) {
-          console.log('Playing audio from message path:', data.message.audioPath);
-          playGeneratedAudio(data.message.audioPath);
-        } else if (data.audioPath) {
-          console.log('Playing audio from root path:', data.audioPath);
-          playGeneratedAudio(data.audioPath);
-        } else {
-          console.log('No audio path provided in response');
-          clearSpeechStatus();
-        }
       } else if (typeof data === 'string') {
         // Handle direct message format
         addMessage('AI', data, 'character');
-        clearSpeechStatus();
       } else if (data.text) {
         // Handle object format
         addMessage(data.character || 'AI', data.text, 'character');
-        if (data.audioPath) {
-          console.log('Playing audio from text object path:', data.audioPath);
-          playGeneratedAudio(data.audioPath);
-        } else {
-          clearSpeechStatus();
-        }
       } else {
         console.error('Unexpected response format:', data);
-        clearSpeechStatus();
       }
+      
+      // Clear speech status
+      clearSpeechStatus();
     });
     
     // Add character response handling - only handle if not already handled by ai_response
@@ -822,135 +805,6 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage('SYSTEM', 'Attempting to pair with code: ' + code, 'system');
       }
     });
-  }
-  
-  // Function to play generated audio with radio effects
-  function playGeneratedAudio(audioPath) {
-    console.log("Playing generated audio:", audioPath);
-    
-    // Ensure audio context is initialized
-    if (!audioContext) {
-      console.log("Initializing audio context for playback");
-      initAudio();
-    }
-    
-    // Create audio element
-    const audioElement = new Audio(audioPath);
-    
-    // Add error handling
-    audioElement.onerror = (error) => {
-      console.error("Error playing audio:", error);
-      addMessage('SYSTEM', 'Failed to play audio response', 'system');
-      
-      // Clear status
-      const speechStatus = document.querySelector('.speech-status');
-      if (speechStatus) {
-        speechStatus.textContent = 'Error playing audio';
-        speechStatus.classList.remove('active');
-        speechStatus.classList.add('error');
-      }
-    };
-    
-    // Add loading handling
-    audioElement.onloadstart = () => {
-      console.log("Audio loading started");
-      const speechStatus = document.querySelector('.speech-status');
-      if (speechStatus) {
-        speechStatus.textContent = 'Loading audio...';
-        speechStatus.classList.add('active');
-        speechStatus.classList.remove('error');
-      }
-    };
-    
-    audioElement.oncanplay = () => {
-      console.log("Audio can play");
-      const speechStatus = document.querySelector('.speech-status');
-      if (speechStatus) {
-        speechStatus.textContent = 'Playing response...';
-        speechStatus.classList.add('active');
-        speechStatus.classList.remove('error');
-      }
-    };
-    
-    // Wait for audio to be loaded before creating audio nodes
-    audioElement.onloadeddata = () => {
-      console.log("Audio data loaded, creating audio nodes");
-      
-      try {
-        // Prepare audio nodes
-        const source = audioContext.createMediaElementSource(audioElement);
-        
-        // Create radio effect filter chain
-        const bandpass = audioContext.createBiquadFilter();
-        bandpass.type = "bandpass";
-        bandpass.frequency.value = 1800;
-        bandpass.Q.value = 0.7;
-        
-        const highpass = audioContext.createBiquadFilter();
-        highpass.type = "highpass";
-        highpass.frequency.value = 500;
-        
-        const lowpass = audioContext.createBiquadFilter();
-        lowpass.type = "lowpass";
-        lowpass.frequency.value = 2500;
-        
-        // Create distortion for radio "crunch"
-        const distortion = audioContext.createWaveShaper();
-        distortion.curve = createDistortionCurve(20);
-        distortion.oversample = "4x";
-        
-        // Lower static volume during speech
-        if (staticGainNode) {
-          staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
-          staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.2);
-        }
-        
-        // Connect nodes
-        source.connect(bandpass);
-        bandpass.connect(highpass);
-        highpass.connect(lowpass);
-        lowpass.connect(distortion);
-        distortion.connect(audioContext.destination);
-        
-        // Play audio
-        audioElement.play().catch(error => {
-          console.error("Error playing audio:", error);
-          addMessage('SYSTEM', 'Failed to play audio response: ' + error.message, 'system');
-          
-          // Clear status
-          const speechStatus = document.querySelector('.speech-status');
-          if (speechStatus) {
-            speechStatus.textContent = 'Error playing audio';
-            speechStatus.classList.remove('active');
-            speechStatus.classList.add('error');
-          }
-        });
-      } catch (error) {
-        console.error("Error setting up audio nodes:", error);
-        addMessage('SYSTEM', 'Failed to set up audio effects: ' + error.message, 'system');
-        
-        // Try playing without effects
-        audioElement.play().catch(error => {
-          console.error("Error playing audio without effects:", error);
-          addMessage('SYSTEM', 'Failed to play audio: ' + error.message, 'system');
-        });
-      }
-    };
-    
-    // Restore static volume when finished
-    audioElement.onended = function() {
-      console.log("Audio playback finished");
-      if (staticGainNode) {
-        adjustStaticVolume();
-      }
-      
-      // Clear status
-      const speechStatus = document.querySelector('.speech-status');
-      if (speechStatus) {
-        speechStatus.textContent = '';
-        speechStatus.classList.remove('active', 'error');
-      }
-    };
   }
   
   // Add microphone status check function
