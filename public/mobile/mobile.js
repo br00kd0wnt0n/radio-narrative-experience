@@ -897,6 +897,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initially disable push-to-talk until paired and on active frequency
     pushToTalkButton.disabled = true;
     
+    // Initialize speech recognition
+    if (compatibilityCheck.speechRecognition) {
+      initSpeechRecognition();
+    }
+    
+    // Initialize speech UI
+    initSpeechUI();
+    
     // Add these lines
     addMessage('SYSTEM', 'Initializing audio system...', 'system');
     
@@ -916,9 +924,6 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     };
     document.body.appendChild(permissionButton);
-    
-    // Initialize speech UI
-    initSpeechUI();
   }
   
   // Start the application
