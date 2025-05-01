@@ -6,7 +6,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const cors = require('cors');
 require('dotenv').config();
-const elevenLabs = require('elevenlabs-js');
+const axios = require('axios');
 const { Server } = require('socket.io');
 const fs = require('fs');
 
@@ -16,27 +16,16 @@ if (!apiKey) {
   console.error('ELEVENLABS_API_KEY is not set in environment variables');
 } else {
   console.log('ElevenLabs API key is set');
-  elevenLabs.setApiKey(apiKey);
 }
 
-// Create a wrapper for the ElevenLabs API to ensure API key is always set
-const elevenLabsWrapper = {
-  textToSpeech: async (voiceId, text, model, options) => {
-    if (!apiKey) {
-      console.error('ElevenLabs API key is not set');
-      return null;
-    }
-    try {
-      return await elevenLabs.textToSpeech(voiceId, text, model, {
-        ...options,
-        apiKey // Explicitly pass the API key
-      });
-    } catch (error) {
-      console.error('Error in ElevenLabs API call:', error);
-      return null;
-    }
+// Create a direct ElevenLabs API client
+const elevenLabsClient = axios.create({
+  baseURL: 'https://api.elevenlabs.io/v1',
+  headers: {
+    'xi-api-key': apiKey,
+    'Content-Type': 'application/json'
   }
-};
+});
 
 // Define voice IDs for each character
 const voiceIds = {
@@ -575,17 +564,20 @@ async function generateSpeech(text, voiceId) {
     }
 
     console.log('[generateSpeech] Calling ElevenLabs API...');
-    const response = await elevenLabsWrapper.textToSpeech(
-      voiceId, 
-      text, 
-      "eleven_multilingual_v2", 
-      {
+    
+    // Make the API call directly
+    const response = await elevenLabsClient.post(`/text-to-speech/${voiceId}`, {
+      text: text,
+      model_id: "eleven_multilingual_v2",
+      voice_settings: {
         stability: 0.75,
         similarity_boost: 0.75
       }
-    );
+    }, {
+      responseType: 'arraybuffer'
+    });
     
-    if (!response) {
+    if (!response || !response.data) {
       console.error('[generateSpeech] No response from ElevenLabs API');
       return null;
     }
@@ -612,7 +604,7 @@ async function generateSpeech(text, voiceId) {
     // Save the file
     try {
       console.log('[generateSpeech] Saving audio file...');
-      await response.saveFile(filePath);
+      await fs.promises.writeFile(filePath, response.data);
       console.log(`[generateSpeech] Audio file saved successfully at: ${filePath}`);
       
       // Verify the file exists and is not empty
@@ -633,6 +625,13 @@ async function generateSpeech(text, voiceId) {
     }
   } catch (error) {
     console.error("[generateSpeech] Error generating speech:", error);
+    if (error.response) {
+      console.error("[generateSpeech] API Error details:", {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data
+      });
+    }
     return null;
   }
 }
