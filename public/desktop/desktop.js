@@ -125,49 +125,38 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize audio context for static sound
   let audioContext = null;
   let staticGainNode = null;
-  let staticFilterNode = null;  // Make filter node accessible globally
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
+  let speechRecognition = null;
+  let buttonSoundGainNode = null;
+  let audioAnalyser = null;
+  let visualizerCanvas = null;
+  let visualizerContext = null;
+  let visualizerData = null;
   
   // Function to initialize noise generation
   function initAudio() {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       
-      // Create gain node for volume control
+      // Create gain node for static
       staticGainNode = audioContext.createGain();
-      staticGainNode.gain.value = 0.7;
+      staticGainNode.gain.value = 0.1; // Lower volume for desktop
+      staticGainNode.connect(audioContext.destination);
       
-      // Check if we have the static audio file
-      if (staticAudio.error || !staticAudio.src) {
-        // Generate static noise using Web Audio API
-        if (window.AudioWorkletNode && audioContext.audioWorklet) {
-          // Use the modern AudioWorkletNode approach
-          initAudioWorklet();
-        } else {
-          // Fallback to older approach with warning acknowledgment
-          console.log("Using deprecated ScriptProcessorNode as fallback");
-          initLegacyNoiseGenerator();
-        }
-      } else {
-        // Set up audio source from the static audio element
-        const source = audioContext.createMediaElementSource(staticAudio);
-        
-        // Connect nodes
-        source.connect(staticGainNode);
-        staticGainNode.connect(audioContext.destination);
-        
-        // Start playing static
-        staticAudio.play().catch(e => {
-          console.error("Couldn't play static audio file:", e);
-          // Fall back to generated noise
-          if (window.AudioWorkletNode && audioContext.audioWorklet) {
-            initAudioWorklet();
-          } else {
-            initLegacyNoiseGenerator();
-          }
-        });
-      }
+      // Create gain node for button sounds
+      buttonSoundGainNode = audioContext.createGain();
+      buttonSoundGainNode.gain.value = 0.3;
+      buttonSoundGainNode.connect(audioContext.destination);
+
+      // Initialize audio visualizer
+      setupAudioVisualizer();
+      
+      return true;
     } catch (error) {
       console.error('Audio initialization failed:', error);
+      return false;
     }
   }
 
@@ -540,6 +529,89 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
+  // Create a fake visualizer that responds to incoming messages
+  function setupDesktopVisualizer() {
+    // Create canvas for visualizer
+    const visualizerCanvas = document.createElement('canvas');
+    visualizerCanvas.className = 'audio-visualizer';
+    visualizerCanvas.width = 300;
+    visualizerCanvas.height = 60;
+    
+    // Add to the interface - place it near the conversation log
+    document.querySelector('.conversation-log').insertBefore(
+      visualizerCanvas, 
+      document.querySelector('.messages')
+    );
+    
+    // Get context
+    const visualizerContext = visualizerCanvas.getContext('2d');
+    
+    // Draw initial flat line
+    drawFlatLine();
+    
+    // Function to draw a flat line
+    function drawFlatLine() {
+      visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.fillStyle = '#222';
+      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.beginPath();
+      visualizerContext.strokeStyle = '#444';
+      visualizerContext.moveTo(0, visualizerCanvas.height / 2);
+      visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
+      visualizerContext.stroke();
+    }
+    
+    // Function to simulate activity
+    function simulateActivity(duration = 2000) {
+      let startTime = Date.now();
+      
+      function draw() {
+        const elapsed = Date.now() - startTime;
+        if (elapsed > duration) {
+          drawFlatLine();
+          return;
+        }
+        
+        // Clear canvas
+        visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+        visualizerContext.fillStyle = '#222';
+        visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+        
+        // Draw bars
+        const barCount = 20;
+        const barWidth = visualizerCanvas.width / barCount;
+        
+        for (let i = 0; i < barCount; i++) {
+          // Random height with decay over time
+          const decay = 1 - (elapsed / duration);
+          const randomFactor = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
+          const height = (visualizerCanvas.height * 0.8) * randomFactor * decay;
+          
+          visualizerContext.fillStyle = isFrequencyActive ? '#4caf50' : '#666';
+          visualizerContext.fillRect(
+            i * barWidth,
+            (visualizerCanvas.height - height) / 2,
+            barWidth - 1,
+            height
+          );
+        }
+        
+        requestAnimationFrame(draw);
+      }
+      
+      draw();
+    }
+    
+    // Monitor for incoming messages and trigger visualization
+    socket.on('ai_response', () => {
+      simulateActivity(3000); // Activity for 3 seconds
+    });
+    
+    return {
+      showActivity: simulateActivity
+    };
+  }
+
   // Initialize the application
   function init() {
     // Add transmission indicator
@@ -582,6 +654,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize tuning knob
     initTuningKnob();
+    
+    // Initialize desktop visualizer
+    const desktopVisualizer = setupDesktopVisualizer();
     
     // Initialize audio on first user interaction
     document.addEventListener('click', () => {
@@ -710,7 +785,49 @@ document.addEventListener('DOMContentLoaded', function() {
     pushToTalkButton.classList.add('active');
     document.querySelector('.transmission-indicator').classList.add('active');
     
-    // Rest of function...
+    // Play button sound instead of static
+    playButtonSound('start');
+    
+    console.log("Starting transmission...");
+    
+    // Clear previous speech text
+    const speechText = document.querySelector('.speech-text');
+    if (speechText) speechText.textContent = '';
+    
+    // Request microphone access
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Start visualizer
+      startAudioVisualization(stream);
+      
+      // Start speech recognition
+      if (speechRecognition) {
+        try {
+          speechRecognition.start();
+        } catch (error) {
+          console.error('Speech recognition start error:', error);
+        }
+      } else {
+        // Fallback to text input
+        const userMessage = prompt('Enter your message:');
+        
+        if (userMessage && userMessage.trim() !== '') {
+          console.log("Sending message:", userMessage);
+          addMessage('YOU', userMessage, 'user');
+          
+          if (socket) {
+            socket.emit('audio_message', { message: userMessage });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      addMessage('SYSTEM', `Microphone error: ${error.message}`, 'system');
+      isTransmitting = false;
+      pushToTalkButton.classList.remove('active');
+      document.querySelector('.transmission-indicator').classList.remove('active');
+    }
   }
 
   function stopTransmitting(e) {
@@ -722,7 +839,19 @@ document.addEventListener('DOMContentLoaded', function() {
     pushToTalkButton.classList.remove('active');
     document.querySelector('.transmission-indicator').classList.remove('active');
     
-    // Rest of function...
+    // Play button sound
+    playButtonSound('end');
+    
+    // Stop speech recognition
+    if (speechRecognition) {
+      try {
+        speechRecognition.stop();
+      } catch (error) {
+        console.error('Speech recognition stop error:', error);
+      }
+    }
+    
+    // Update visualizer (it will draw flat line on next frame)
   }
 
   // Helper function to create display elements
@@ -737,5 +866,89 @@ document.addEventListener('DOMContentLoaded', function() {
     
     container.appendChild(element);
     return element;
+  }
+
+  // Add audio visualizer setup
+  function setupAudioVisualizer() {
+    // Create canvas for visualizer
+    visualizerCanvas = document.createElement('canvas');
+    visualizerCanvas.className = 'audio-visualizer';
+    visualizerCanvas.width = 300;
+    visualizerCanvas.height = 60;
+    
+    // Add to the interface
+    const container = document.createElement('div');
+    container.className = 'visualizer-container';
+    container.appendChild(visualizerCanvas);
+    
+    document.querySelector('.radio-interface').insertBefore(
+      container, 
+      document.querySelector('.controls')
+    );
+    
+    // Get context
+    visualizerContext = visualizerCanvas.getContext('2d');
+    
+    // Initialize visualizer when audio context is ready
+    if (audioContext) {
+      audioAnalyser = audioContext.createAnalyser();
+      audioAnalyser.fftSize = 64; // Larger size for desktop visualization
+      visualizerData = new Uint8Array(audioAnalyser.frequencyBinCount);
+    }
+  }
+
+  // Function to start visualizing audio
+  function startAudioVisualization(stream) {
+    if (!audioContext || !audioAnalyser) return;
+    
+    // Connect the stream to the analyzer
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(audioAnalyser);
+    
+    // Start drawing
+    drawVisualizer();
+  }
+
+  // Function to draw the visualizer
+  function drawVisualizer() {
+    if (!isTransmitting || !audioAnalyser || !visualizerContext) {
+      // If not transmitting, draw flat line
+      visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.fillStyle = '#333';
+      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.beginPath();
+      visualizerContext.strokeStyle = '#666';
+      visualizerContext.moveTo(0, visualizerCanvas.height / 2);
+      visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
+      visualizerContext.stroke();
+      return;
+    }
+    
+    // Get frequency data
+    audioAnalyser.getByteFrequencyData(visualizerData);
+    
+    // Clear canvas
+    visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+    visualizerContext.fillStyle = '#333';
+    visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+    
+    // Draw bars
+    const barWidth = visualizerCanvas.width / visualizerData.length;
+    visualizerContext.fillStyle = '#4caf50';
+    
+    for (let i = 0; i < visualizerData.length; i++) {
+      const value = visualizerData[i] / 255;
+      const barHeight = value * visualizerCanvas.height;
+      
+      visualizerContext.fillRect(
+        i * barWidth,
+        visualizerCanvas.height - barHeight,
+        barWidth - 1,
+        barHeight
+      );
+    }
+    
+    // Continue animation
+    requestAnimationFrame(drawVisualizer);
   }
 });

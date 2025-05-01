@@ -61,44 +61,49 @@
 
 /* Speech Recognition Display */
 .speech-display {
-  position: absolute;
-  bottom: 120px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 90%;
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid #4CAF50;
-  border-radius: 8px;
+  width: 100%;
+  margin-top: 10px;
+  background-color: #222;
+  border-radius: 4px;
   padding: 10px;
-  color: #fff;
-  font-family: 'Courier New', monospace;
-  text-align: center;
-  z-index: 1000;
 }
 
 .speech-text {
-  min-height: 24px;
+  min-height: 20px;
   margin-bottom: 5px;
-  font-size: 16px;
-  line-height: 1.4;
+  color: white;
 }
 
 .speech-text .interim {
-  color: #4CAF50;
+  color: #aaa;
   font-style: italic;
 }
 
 .speech-status {
-  font-size: 12px;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  font-size: 0.8rem;
+  color: #aaa;
 }
 
 .speech-status.active {
-  color: #4CAF50;
+  color: #4caf50;
 }
 
 .speech-status.error {
   color: #f44336;
+}
+
+/* Audio Visualizer */
+.visualizer-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 10px 0;
+}
+
+.audio-visualizer {
+  width: 100%;
+  max-width: 300px;
+  height: 40px;
+  background-color: #333;
+  border-radius: 4px;
 } 

@@ -36,4 +36,27 @@
   padding: 8px 12px;
   margin: 5px 0;
   font-style: italic;
+}
+
+/* Audio Visualizer */
+.visualizer-container {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 300px;
+  height: 60px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #4CAF50;
+  border-radius: 4px;
+  padding: 5px;
+  z-index: 1000;
+}
+
+.audio-visualizer {
+  width: 100%;
+  height: 60px;
+  background-color: #222;
+  border-radius: 4px;
+  margin-bottom: 10px;
 } 
