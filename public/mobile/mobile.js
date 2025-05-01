@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let audioChunks = [];
   let isRecording = false;
   let speechRecognition = null;
+  let buttonSoundGainNode = null;
   
   // Connect to WebSocket server
   function connectSocket() {
@@ -134,47 +135,23 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
-  // Initialize audio context for static sound
+  // Initialize audio context for effects only
   function initAudio() {
     try {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       
-      // Create gain node for volume control
-      staticGainNode = audioContext.createGain();
-      staticGainNode.gain.value = 0.7;
+      // Don't play static on mobile - create audio context only for effects
+      console.log('Audio context created for effects only');
       
-      // Check if we have the static audio file
-      if (staticAudio.error || !staticAudio.src) {
-        // Generate static noise using Web Audio API
-        if (window.AudioWorkletNode && audioContext.audioWorklet) {
-          // Use the modern AudioWorkletNode approach
-          initAudioWorklet();
-        } else {
-          // Fallback to older approach with warning acknowledgment
-          console.log("Using deprecated ScriptProcessorNode as fallback");
-          initLegacyNoiseGenerator();
-        }
-      } else {
-        // Set up audio source from the static audio element
-        const source = audioContext.createMediaElementSource(staticAudio);
-        
-        // Connect nodes
-        source.connect(staticGainNode);
-        staticGainNode.connect(audioContext.destination);
-        
-        // Start playing static
-        staticAudio.play().catch(e => {
-          console.error("Couldn't play static audio file:", e);
-          // Fall back to generated noise
-          if (window.AudioWorkletNode && audioContext.audioWorklet) {
-            initAudioWorklet();
-          } else {
-            initLegacyNoiseGenerator();
-          }
-        });
-      }
+      // Create gain node for button sounds
+      buttonSoundGainNode = audioContext.createGain();
+      buttonSoundGainNode.gain.value = 0.3;
+      buttonSoundGainNode.connect(audioContext.destination);
+      
+      return true;
     } catch (error) {
       console.error('Audio initialization failed:', error);
+      return false;
     }
   }
   
@@ -286,31 +263,30 @@ document.addEventListener('DOMContentLoaded', function() {
     messagesElement.scrollTop = messagesElement.scrollHeight;
   }
   
-  // Handle push-to-talk
+  // Update setupPushToTalk function to use new button sounds
   function setupPushToTalk() {
-    // For mobile devices
-    pushToTalkButton.addEventListener('touchstart', startTransmitting);
-    pushToTalkButton.addEventListener('touchend', stopTransmitting);
-    
-    // For desktop/laptop testing
-    pushToTalkButton.addEventListener('mousedown', startTransmitting);
-    pushToTalkButton.addEventListener('mouseup', stopTransmitting);
-    pushToTalkButton.addEventListener('mouseleave', stopTransmitting);
-    
-    // Keyboard support (space bar)
-    document.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && !isTransmitting && !e.repeat && 
-          document.activeElement !== pairingCodeInput) {
-        e.preventDefault();
-        startTransmitting(e);
-      }
+    pushToTalkButton.addEventListener('mousedown', (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+      startTransmitting(e);
+      playButtonSound('start');
     });
     
-    document.addEventListener('keyup', (e) => {
-      if (e.code === 'Space' && isTransmitting) {
-        e.preventDefault();
-        stopTransmitting(e);
-      }
+    pushToTalkButton.addEventListener('touchstart', (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+      startTransmitting(e);
+      playButtonSound('start');
+    });
+    
+    pushToTalkButton.addEventListener('mouseup', (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+      stopTransmitting(e);
+      playButtonSound('stop');
+    });
+    
+    pushToTalkButton.addEventListener('touchend', (e) => {
+      if (!isPaired || !isFrequencyActive) return;
+      stopTransmitting(e);
+      playButtonSound('stop');
     });
   }
   
@@ -629,6 +605,33 @@ document.addEventListener('DOMContentLoaded', function() {
         indicator.textContent = 'MIC ERROR';
         document.body.appendChild(indicator);
       });
+  }
+  
+  // Add button sound functions
+  function playButtonSound(type) {
+    if (!audioContext) return;
+    
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(buttonSoundGainNode);
+    
+    if (type === 'start') {
+      // Higher pitched "click on" sound
+      oscillator.frequency.value = 1200;
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      oscillator.start();
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+      setTimeout(() => oscillator.stop(), 100);
+    } else {
+      // Lower pitched "click off" sound
+      oscillator.frequency.value = 800;
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      oscillator.start();
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+      setTimeout(() => oscillator.stop(), 100);
+    }
   }
   
   // Initialize the application
