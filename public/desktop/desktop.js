@@ -718,8 +718,8 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    // Create audio element
-    const audioElement = new Audio(audioPath);
+    // Create audio element with full URL
+    const audioElement = new Audio(window.location.origin + audioPath);
     
     // Add error handling for audio loading
     audioElement.onerror = function(e) {

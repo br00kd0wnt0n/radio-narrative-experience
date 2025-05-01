@@ -589,8 +589,8 @@ async function generateSpeech(text, voiceId) {
         return null;
       }
       
+      // Return just the filename, not the full path
       return {
-        filePath,
         filename
       };
     } catch (error) {
