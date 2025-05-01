@@ -936,6 +936,32 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
+  // Update the pairing code input in mobile.js
+  function updatePairingCodeInput() {
+    const pairingCodeInput = document.getElementById('pairing-code');
+    if (pairingCodeInput) {
+      // Set input type to numeric
+      pairingCodeInput.type = 'tel'; // 'tel' gives numeric keyboard on most mobile devices
+      
+      // Add pattern for numeric input
+      pairingCodeInput.pattern = '[0-9]*';
+      
+      // Add inputmode attribute for better mobile support
+      pairingCodeInput.inputMode = 'numeric';
+      
+      // Add maxlength to match the 6-digit code
+      pairingCodeInput.maxLength = 6;
+      
+      // Add placeholder to indicate format
+      pairingCodeInput.placeholder = '6-digit code';
+      
+      // Add auto-complete off to prevent suggestions
+      pairingCodeInput.autocomplete = 'off';
+      
+      console.log("Pairing code input configured for numeric entry");
+    }
+  }
+  
   // Initialize the application
   function init() {
     // Add transmission indicator
@@ -1012,6 +1038,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     };
     document.body.appendChild(permissionButton);
+
+    // Update the pairing code input
+    updatePairingCodeInput();
   }
   
   // Start the application
