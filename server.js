@@ -515,7 +515,7 @@ io.on('connection', (socket) => {
 
       // Send response back to both clients using standardized format
       const responseMessage = {
-        message: response.text,
+        text: response.text,
         character: character,
         isNarrativeEvent: false,
         isAIResponse: true,

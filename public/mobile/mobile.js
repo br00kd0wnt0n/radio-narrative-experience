@@ -362,18 +362,21 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('ai_response', (data) => {
       console.log('Received AI response:', data);
       
-      // Handle nested message format
-      if (data.message && data.message.text) {
+      // Handle the response format
+      if (data && (data.message || data.text)) {
         // Update UI with the message
-        addMessage(data.character || 'AI', data.message.text, 'character');
-      } else if (typeof data === 'string') {
-        // Handle direct message format
-        addMessage('AI', data, 'character');
-      } else if (data.text) {
-        // Handle object format
-        addMessage(data.character || 'AI', data.text, 'character');
+        addMessage(data.character || 'AI', data.message || data.text, 'character');
+        
+        // Play audio if available
+        if (data.audioPath) {
+          console.log("Playing audio from path:", data.audioPath);
+          playGeneratedAudio(data.audioPath);
+        } else {
+          console.log("No audio path available in response");
+        }
       } else {
         console.error('Unexpected response format:', data);
+        addMessage('SYSTEM', 'Received invalid response format', 'system');
       }
       
       // Clear speech status
@@ -911,6 +914,55 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     return curve;
+  }
+  
+  // Play generated audio with radio effect
+  function playGeneratedAudio(audioPath) {
+    console.log('Playing generated audio:', audioPath);
+    
+    // Create audio element
+    const audio = new Audio(audioPath);
+    
+    // Add radio effect
+    createRadioVoiceEffect(audio);
+    
+    // Add event listeners
+    audio.onplay = () => {
+      console.log('Audio playback started');
+      const speechStatus = document.querySelector('.speech-status');
+      if (speechStatus) {
+        speechStatus.textContent = 'Playing...';
+        speechStatus.classList.add('active');
+      }
+    };
+    
+    audio.onended = () => {
+      console.log('Audio playback ended');
+      const speechStatus = document.querySelector('.speech-status');
+      if (speechStatus) {
+        speechStatus.textContent = '';
+        speechStatus.classList.remove('active');
+      }
+    };
+    
+    audio.onerror = (error) => {
+      console.error('Audio playback error:', error);
+      const speechStatus = document.querySelector('.speech-status');
+      if (speechStatus) {
+        speechStatus.textContent = 'Error playing audio';
+        speechStatus.classList.add('error');
+      }
+    };
+    
+    // Start playback
+    audio.play().catch(error => {
+      console.error('Error starting audio playback:', error);
+      const speechStatus = document.querySelector('.speech-status');
+      if (speechStatus) {
+        speechStatus.textContent = 'Error playing audio';
+        speechStatus.classList.add('error');
+      }
+    });
   }
   
   // Initialize the application
