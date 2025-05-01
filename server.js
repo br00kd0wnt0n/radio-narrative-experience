@@ -345,6 +345,26 @@ io.on('connection', (socket) => {
   
   // Handle audio messages from mobile
   socket.on('audio_message', async (data) => {
+    console.log(`Received audio message from ${socket.id}:`, data.message);
+    
+    // Find the mobile client
+    const mobile = mobileClients.get(socket.id);
+    if (!mobile || !mobile.paired_desktop) {
+      console.log(`Mobile client ${socket.id} is not properly paired`);
+      socket.emit('error', { message: 'Not properly paired with desktop' });
+      return;
+    }
+    
+    // Find the desktop client
+    const desktop = desktopClients.get(mobile.paired_desktop);
+    if (!desktop) {
+      console.log(`Could not find paired desktop ${mobile.paired_desktop}`);
+      socket.emit('error', { message: 'Paired desktop not found' });
+      return;
+    }
+    
+    console.log(`Forwarding message to desktop ${desktop.socket.id}`);
+    
     try {
       // Validate message format
       if (!data || typeof data.message !== 'string' || data.message.trim() === '') {
@@ -354,35 +374,8 @@ io.on('connection', (socket) => {
         return;
       }
 
-      const mobile = mobileClients.get(socket.id);
-      if (!mobile || !mobile.paired_desktop) {
-        console.error('Unpaired mobile client attempted to send message');
-        const errorMessage = messageFormats.error('Not paired with desktop');
-        socket.emit(errorMessage.type, errorMessage.data);
-        return;
-      }
-      
-      const desktop = desktopClients.get(mobile.paired_desktop);
-      if (!desktop) {
-        console.error('Paired desktop client not found');
-        const errorMessage = messageFormats.error('Desktop client not found');
-        socket.emit(errorMessage.type, errorMessage.data);
-        return;
-      }
-      
-      // Get current frequency data
-      const frequency = desktop.current_frequency;
-      const frequencyData = frequencies[frequency];
-      
-      if (!frequencyData) {
-        console.error('No active frequency for message');
-        const errorMessage = messageFormats.error('No active frequency');
-        socket.emit(errorMessage.type, errorMessage.data);
-        return;
-      }
-
       const userMessage = data.message.trim();
-      const character = frequencyData.character;
+      const character = frequencies[desktop.current_frequency].character;
       
       console.log(`Processing message from ${socket.id} to ${character}: "${userMessage}"`);
       
@@ -428,11 +421,37 @@ io.on('connection', (socket) => {
       const response = await generateAIResponse(userMessage, character, characterState.stage);
       console.log(`Generated response for ${character}: "${response}"`);
 
+      // Generate speech for the response
+      const audioResult = await generateSpeech(response, character);
+      console.log("Generated speech:", audioResult);
+
       // Send response back to both clients using standardized format
       const responseMessage = messageFormats.characterResponse(character, response, characterState.stage);
       
+      // Add audio path to response if available
+      if (audioResult && audioResult.filename) {
+        responseMessage.data.audioPath = `/generated/${audioResult.filename}`;
+      }
+      
       desktop.socket.emit(responseMessage.type, responseMessage.data);
       socket.emit(responseMessage.type, responseMessage.data);
+      
+      // Add confirmation when message is sent to desktop
+      desktop.socket.emit('ai_response', {
+        message: response,
+        character: character,
+        isNarrativeEvent: false,
+        audioPath: audioResult ? `/generated/${audioResult.filename}` : null
+      });
+      console.log(`AI response sent to desktop ${desktop.socket.id}`);
+      
+      socket.emit('ai_response', {
+        message: response,
+        character: character,
+        isNarrativeEvent: false,
+        audioPath: audioResult ? `/generated/${audioResult.filename}` : null
+      });
+      console.log(`AI response sent to mobile ${socket.id}`);
       
     } catch (error) {
       console.error('Error processing audio message:', error);
@@ -441,9 +460,14 @@ io.on('connection', (socket) => {
     }
   });
   
+  // Add more error handling
+  socket.on('error', (error) => {
+    console.error(`Socket error for ${socket.id}:`, error);
+  });
+  
   // Disconnect handling
-  socket.on('disconnect', () => {
-    console.log('Client disconnected:', socket.id, 'from', socket.handshake.address);
+  socket.on('disconnect', (reason) => {
+    console.log(`Client ${socket.id} disconnected: ${reason}`);
     
     // If desktop disconnects, notify paired mobile
     if (desktopClients.has(socket.id)) {
