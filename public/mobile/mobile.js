@@ -60,66 +60,31 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Enhanced AI response handling
     socket.on('ai_response', (data) => {
-      console.log("Received AI response:", data);
-      if (data && data.message && data.message.text) {
-        // Handle nested message format
-        addMessage(data.character, data.message.text, 'character');
+      console.log('Received AI response:', data);
+      
+      // Handle nested message format
+      if (data.message && data.message.text) {
+        // Update UI with the message
+        addMessage(data.character || 'AI', data.message.text, 'character');
         
-        // Clear any waiting status
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = '';
-          speechStatus.classList.remove('active', 'error');
-        }
-        
-        // Play audio if available in nested format
-        if (data.message.audioPath) {
-          console.log("Playing audio from nested path:", data.message.audioPath);
-          playGeneratedAudio(data.message.audioPath);
+        // Play audio if available
+        if (data.audioPath) {
+          playGeneratedAudio(data.audioPath);
         } else {
-          console.log("No audio path provided in nested message");
+          console.log('No audio path provided in response');
+          clearSpeechStatus();
         }
-      } else if (data && data.message) {
+      } else if (typeof data === 'string') {
         // Handle direct message format
-        addMessage(data.character, data.message, 'character');
-        
-        // Clear any waiting status
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = '';
-          speechStatus.classList.remove('active', 'error');
-        }
-        
-        // Play audio if available
-        if (data.audioPath) {
-          console.log("Playing audio from path:", data.audioPath);
-          playGeneratedAudio(data.audioPath);
-        } else {
-          console.log("No audio path provided in response");
-        }
-      } else if (data && typeof data === 'object') {
+        addMessage('AI', data, 'character');
+        clearSpeechStatus();
+      } else if (data.text) {
         // Handle object format
-        const message = data.message || data.text || JSON.stringify(data);
-        const character = data.character || 'Unknown';
-        addMessage(character, message, 'character');
-        
-        // Clear any waiting status
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = '';
-          speechStatus.classList.remove('active', 'error');
-        }
-        
-        // Play audio if available
-        if (data.audioPath) {
-          console.log("Playing audio from path:", data.audioPath);
-          playGeneratedAudio(data.audioPath);
-        } else {
-          console.log("No audio path provided in response");
-        }
+        addMessage(data.character || 'AI', data.text, 'character');
+        clearSpeechStatus();
       } else {
-        console.error("Invalid AI response data:", data);
-        addMessage('SYSTEM', 'Received invalid response from server', 'system');
+        console.error('Unexpected response format:', data);
+        clearSpeechStatus();
       }
     });
     
@@ -131,11 +96,7 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage(data.data.character, data.data.message, 'character');
         
         // Clear any waiting status
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = '';
-          speechStatus.classList.remove('active', 'error');
-        }
+        clearSpeechStatus();
 
         // Play audio if available in nested format
         if (data.data.audioPath) {
@@ -145,13 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
       } else if (data && data.message) {
         // Handle direct message format
         addMessage(data.character || 'Unknown', data.message, 'character');
-        
-        // Clear any waiting status
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = '';
-          speechStatus.classList.remove('active', 'error');
-        }
+        clearSpeechStatus();
 
         // Play audio if available in direct format
         if (data.audioPath) {
@@ -163,13 +118,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const message = data.message || data.text || JSON.stringify(data);
         const character = data.character || 'Unknown';
         addMessage(character, message, 'character');
-        
-        // Clear any waiting status
-        const speechStatus = document.querySelector('.speech-status');
-        if (speechStatus) {
-          speechStatus.textContent = '';
-          speechStatus.classList.remove('active', 'error');
-        }
+        clearSpeechStatus();
 
         // Play audio if available in object format
         if (data.audioPath) {

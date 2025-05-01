@@ -325,25 +325,41 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   
   // Add message to the conversation log
-  function addMessage(sender, text, type) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${type}`;
-    
-    const messageInfo = document.createElement('div');
-    messageInfo.className = 'message-info';
-    messageInfo.textContent = `${sender} | ${new Date().toLocaleTimeString()}`;
-    
-    const messageText = document.createElement('div');
+  function addMessage(character, message, type = 'system') {
+    const transmissionLog = document.getElementById('transmission-log');
+    if (!transmissionLog) return;
+
+    const messageElement = document.createElement('div');
+    messageElement.className = `message ${type}`;
+
+    // Format the message content
+    let formattedMessage = message;
+    if (typeof message === 'object') {
+      if (message.text) {
+        formattedMessage = message.text;
+      } else if (message.message) {
+        formattedMessage = message.message;
+      } else {
+        formattedMessage = JSON.stringify(message, null, 2);
+      }
+    }
+
+    // Create character label if provided
+    if (character) {
+      const characterLabel = document.createElement('span');
+      characterLabel.className = 'character-label';
+      characterLabel.textContent = `${character}: `;
+      messageElement.appendChild(characterLabel);
+    }
+
+    // Add the message text
+    const messageText = document.createElement('span');
     messageText.className = 'message-text';
-    messageText.textContent = text;
-    
-    messageDiv.appendChild(messageInfo);
-    messageDiv.appendChild(messageText);
-    
-    messagesElement.appendChild(messageDiv);
-    
-    // Auto-scroll to bottom
-    messagesElement.scrollTop = messagesElement.scrollHeight;
+    messageText.textContent = formattedMessage;
+    messageElement.appendChild(messageText);
+
+    transmissionLog.appendChild(messageElement);
+    transmissionLog.scrollTop = transmissionLog.scrollHeight;
   }
   
   // Play transmission audio (with voice effect)
