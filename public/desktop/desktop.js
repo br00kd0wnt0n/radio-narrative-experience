@@ -63,11 +63,8 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage(data.character, data.message, 'character');
         
         // Play audio if available
-        if (data.message.audioPath) {
-          console.log('Playing audio from message path:', data.message.audioPath);
-          playGeneratedAudio(data.message.audioPath);
-        } else if (data.audioPath) {
-          console.log('Playing audio from root path:', data.audioPath);
+        if (data.audioPath) {
+          console.log('Playing audio from path:', data.audioPath);
           playGeneratedAudio(data.audioPath);
         } else {
           addMessage('SYSTEM', 'No audio available for this transmission', 'system');

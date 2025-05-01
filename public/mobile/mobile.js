@@ -102,22 +102,12 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log("Received character response:", data);
       
       // Skip if this is an AI response (already handled)
-      if (data && data.data && data.data.isAIResponse) {
+      if (data && data.isAIResponse) {
         console.log('Skipping character_response as this is an AI response');
         return;
       }
       
-      if (data && data.data && data.data.message) {
-        // Handle nested format
-        addMessage(data.data.character, data.data.message, 'character');
-        clearSpeechStatus();
-
-        // Play audio if available in nested format
-        if (data.data.audioPath) {
-          console.log("Playing audio from nested path:", data.data.audioPath);
-          playGeneratedAudio(data.data.audioPath);
-        }
-      } else if (data && data.message) {
+      if (data && data.message) {
         // Handle direct message format
         addMessage(data.character || 'Unknown', data.message, 'character');
         clearSpeechStatus();
@@ -125,18 +115,6 @@ document.addEventListener('DOMContentLoaded', function() {
         // Play audio if available in direct format
         if (data.audioPath) {
           console.log("Playing audio from direct path:", data.audioPath);
-          playGeneratedAudio(data.audioPath);
-        }
-      } else if (data && typeof data === 'object') {
-        // Handle object format
-        const message = data.message || data.text || JSON.stringify(data);
-        const character = data.character || 'Unknown';
-        addMessage(character, message, 'character');
-        clearSpeechStatus();
-
-        // Play audio if available in object format
-        if (data.audioPath) {
-          console.log("Playing audio from object path:", data.audioPath);
           playGeneratedAudio(data.audioPath);
         }
       } else {

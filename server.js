@@ -426,32 +426,19 @@ io.on('connection', (socket) => {
       console.log("Generated speech:", audioResult);
 
       // Send response back to both clients using standardized format
-      const responseMessage = messageFormats.characterResponse(character, response, characterState.stage);
-      
-      // Add audio path to response if available
-      if (audioResult && audioResult.filename) {
-        responseMessage.data.audioPath = `/generated/${audioResult.filename}`;
-      }
-      
-      desktop.socket.emit(responseMessage.type, responseMessage.data);
-      socket.emit(responseMessage.type, responseMessage.data);
-      
-      // Add confirmation when message is sent to desktop
-      desktop.socket.emit('ai_response', {
+      const responseMessage = {
         message: response,
         character: character,
         isNarrativeEvent: false,
+        isAIResponse: true,
         audioPath: audioResult ? `/generated/${audioResult.filename}` : null
-      });
-      console.log(`AI response sent to desktop ${desktop.socket.id}`);
+      };
       
-      socket.emit('ai_response', {
-        message: response,
-        character: character,
-        isNarrativeEvent: false,
-        audioPath: audioResult ? `/generated/${audioResult.filename}` : null
-      });
-      console.log(`AI response sent to mobile ${socket.id}`);
+      // Send to both clients
+      desktop.socket.emit('ai_response', responseMessage);
+      socket.emit('ai_response', responseMessage);
+      
+      console.log(`AI response sent to desktop ${desktop.socket.id} and mobile ${socket.id}`);
       
     } catch (error) {
       console.error('Error processing audio message:', error);
