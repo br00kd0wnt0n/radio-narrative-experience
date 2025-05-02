@@ -1,8 +1,8 @@
 // Mobile Interface Logic - public/mobile/mobile.js
-// Version: 1.0.2
+// Version: 1.0.3
 // Last Updated: 2024-03-19
-// Changes: Implemented direct audio capture using ScriptProcessor
-console.log('Mobile interface initializing... Version: 1.0.2 - Direct audio capture active');
+// Changes: Fixed speech transcript display and improved visibility
+console.log('Mobile interface initializing... Version: 1.0.3 - Speech transcript display active');
 
 document.addEventListener('DOMContentLoaded', function() {
   // Elements
@@ -236,6 +236,13 @@ document.addEventListener('DOMContentLoaded', function() {
     isTransmitting = true;
     pushToTalkButton.classList.add('active');
     document.querySelector('.transmission-indicator').classList.add('active');
+
+    // Show speech display
+    const speechDisplay = document.querySelector('.speech-display');
+    if (speechDisplay) {
+      speechDisplay.style.display = 'block';
+      speechDisplay.classList.add('active');
+    }
 
     // Play button sound
     playButtonSound('start');
