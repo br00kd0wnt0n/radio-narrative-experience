@@ -195,18 +195,13 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
+    console.log('Starting transmission...');
     isTransmitting = true;
     pushToTalkButton.classList.add('active');
     document.querySelector('.transmission-indicator').classList.add('active');
 
     // Play button sound
     playButtonSound('start');
-
-    console.log('Starting transmission...');
-
-    // Clear previous speech text
-    const speechText = document.querySelector('.speech-text');
-    if (speechText) speechText.textContent = '';
 
     try {
       // Resume audio context if it's suspended
@@ -223,20 +218,75 @@ document.addEventListener('DOMContentLoaded', function() {
         startAudioVisualization();
       }
 
-      // Start speech recognition
-      if (speechRecognition) {
-        try {
-          if (speechRecognition.state === 'listening') {
-            speechRecognition.stop();
-          }
-          speechRecognition.start();
+      // Initialize speech recognition if not already done
+      if (!speechRecognition) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        speechRecognition = new SpeechRecognition();
+        speechRecognition.continuous = false;
+        speechRecognition.interimResults = true;
+        speechRecognition.lang = 'en-US';
+
+        speechRecognition.onstart = () => {
           console.log('Speech recognition started');
-        } catch (error) {
-          console.error('Speech recognition start error:', error);
-          fallbackToTextInput();
+          const speechStatus = document.querySelector('.speech-status');
+          if (speechStatus) {
+            speechStatus.textContent = 'Listening...';
+            speechStatus.classList.add('active');
+          }
+        };
+
+        speechRecognition.onresult = (event) => {
+          console.log('Speech recognition result:', event);
+          const speechText = document.querySelector('.speech-text');
+          if (!speechText) return;
+
+          let finalTranscript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            }
+          }
+
+          if (finalTranscript) {
+            console.log('Final transcript:', finalTranscript);
+            speechText.textContent = finalTranscript;
+            if (socket && socket.connected) {
+              socket.emit('audio_message', { message: finalTranscript });
+              addMessage('YOU', finalTranscript, 'user');
+            }
+          }
+        };
+
+        speechRecognition.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+          const speechStatus = document.querySelector('.speech-status');
+          if (speechStatus) {
+            speechStatus.textContent = `Error: ${event.error}`;
+            speechStatus.classList.add('error');
+          }
+        };
+
+        speechRecognition.onend = () => {
+          console.log('Speech recognition ended');
+          if (!isTransmitting) {
+            const speechStatus = document.querySelector('.speech-status');
+            if (speechStatus) {
+              speechStatus.textContent = 'Ready';
+              speechStatus.classList.remove('active', 'error');
+            }
+          }
+        };
+      }
+
+      // Start speech recognition
+      try {
+        if (speechRecognition.state === 'listening') {
+          speechRecognition.stop();
         }
-      } else {
-        console.log('Speech recognition not available, falling back to text input');
+        speechRecognition.start();
+        console.log('Speech recognition started');
+      } catch (error) {
+        console.error('Speech recognition start error:', error);
         fallbackToTextInput();
       }
 
@@ -275,10 +325,6 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
               console.error('Socket not connected, cannot send audio');
             }
-          };
-          
-          reader.onerror = (error) => {
-            console.error('Error reading audio data:', error);
           };
           
           reader.readAsDataURL(audioBlob);
