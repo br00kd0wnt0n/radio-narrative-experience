@@ -103,9 +103,15 @@ document.addEventListener('DOMContentLoaded', function() {
         if (finalTranscript) {
           speechText.textContent = finalTranscript;
           if (finalTranscript.trim() !== '' && socket && socket.connected) {
-            console.log('Sending message:', finalTranscript);
+            console.log('Sending text message:', finalTranscript);
             addMessage('YOU', finalTranscript, 'user');
-            socket.emit('audio_message', { message: finalTranscript });
+            // Send text message with proper format
+            socket.emit('audio_message', {
+              message: finalTranscript,
+              type: 'text',
+              frequency: currentFrequency || 'unknown',
+              timestamp: Date.now()
+            });
           }
         }
       };
@@ -303,21 +309,27 @@ document.addEventListener('DOMContentLoaded', function() {
           // Convert to base64
           const base64Audio = btoa(String.fromCharCode.apply(null, new Uint8Array(int16Data.buffer)));
 
-          // Send audio data with frequency information
-          socket.emit('audio_message', {
-            audio: base64Audio,
+          // Send audio data with proper format
+          const audioMessage = {
+            message: base64Audio, // Use 'message' instead of 'audio'
+            type: 'audio',       // Add type to indicate this is audio data
             frequency: currentFrequency || 'unknown',
             timestamp: Date.now(),
             format: 'raw'
+          };
+
+          console.log('Sending audio message:', {
+            type: audioMessage.type,
+            frequency: audioMessage.frequency,
+            timestamp: audioMessage.timestamp,
+            dataSize: base64Audio.length
           });
 
-          console.log('Audio chunk sent:', {
-            size: base64Audio.length,
-            timestamp: Date.now(),
-            frequency: currentFrequency
-          });
+          socket.emit('audio_message', audioMessage);
+
         } catch (error) {
           console.error('Error processing audio chunk:', error);
+          addMessage('SYSTEM', 'Error processing audio: ' + error.message, 'system');
         } finally {
           isProcessing = false;
         }
@@ -432,6 +444,63 @@ document.addEventListener('DOMContentLoaded', function() {
       addMessage('SYSTEM', message, 'system');
     });
     
+    // Enhanced error handling
+    socket.on('error', (error) => {
+      console.error("Socket error:", {
+        error: error,
+        message: error.message,
+        type: error.type,
+        stack: error.stack
+      });
+      
+      let errorMessage = 'Connection error: ';
+      if (error.message) {
+        errorMessage += error.message;
+      } else if (typeof error === 'string') {
+        errorMessage += error;
+      } else {
+        errorMessage += 'Unknown error occurred';
+      }
+      
+      addMessage('SYSTEM', errorMessage, 'system');
+      
+      // Attempt to recover from error
+      if (socket && !socket.connected) {
+        console.log("Attempting to reconnect after error...");
+        socket.connect();
+      }
+    });
+
+    // Add error handling for audio message events
+    socket.on('audio_message_error', (error) => {
+      console.error("Audio message error:", {
+        error: error,
+        message: error.message,
+        type: error.type
+      });
+      addMessage('SYSTEM', 'Error sending audio: ' + (error.message || 'Unknown error'), 'system');
+    });
+
+    // Add error handling for registration
+    socket.on('register_error', (error) => {
+      console.error("Registration error:", {
+        error: error,
+        message: error.message,
+        type: error.type
+      });
+      addMessage('SYSTEM', 'Registration failed: ' + (error.message || 'Unknown error'), 'system');
+    });
+
+    // Add error handling for pairing
+    socket.on('pair_error', (error) => {
+      console.error("Pairing error:", {
+        error: error,
+        message: error.message,
+        type: error.type
+      });
+      addMessage('SYSTEM', 'Pairing failed: ' + (error.message || 'Unknown error'), 'system');
+    });
+    
     // Enhanced AI response handling
     socket.on('ai_response', (data) => {
       console.log('Received AI response:', data);
@@ -480,24 +549,6 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         console.error("Invalid character response data:", data);
         addMessage('SYSTEM', 'Received invalid response from server', 'system');
-      }
-    });
-    
-    // Add error handling
-    socket.on('error', (data) => {
-      console.error("Socket error:", data);
-      if (data && data.message) {
-        addMessage('SYSTEM', `Error: ${data.message}`, 'system');
-      } else {
-        addMessage('SYSTEM', 'An error occurred', 'system');
-      }
-      
-      // Clear any waiting status
-      const speechStatus = document.querySelector('.speech-status');
-      if (speechStatus) {
-        speechStatus.textContent = 'Error occurred';
-        speechStatus.classList.remove('active');
-        speechStatus.classList.add('error');
       }
     });
     
