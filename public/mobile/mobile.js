@@ -1,6 +1,6 @@
 // Mobile Interface Logic - public/mobile/mobile.js
-// Version: 1.0.0
-console.log('Mobile interface initializing... Version: 1.0.0');
+// Version: 1.0.1
+console.log('Mobile interface initializing... Version: 1.0.1 - Debug: Audio capture optimizations active');
 
 document.addEventListener('DOMContentLoaded', function() {
   // Elements
