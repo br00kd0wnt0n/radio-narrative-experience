@@ -705,62 +705,36 @@ document.addEventListener('DOMContentLoaded', function() {
   // Stop audio transmission
   function stopTransmitting(e) {
     e.preventDefault();
-    e.stopPropagation();
-
+    
     if (!isTransmitting) return;
-
-    console.log('Stopping transmission...');
+    
     isTransmitting = false;
     pushToTalkButton.classList.remove('active');
     document.querySelector('.transmission-indicator').classList.remove('active');
-
+    
     // Play button sound
     playButtonSound('end');
-
+    
     // Stop speech recognition
-    if (speechRecognition && speechRecognition.state === 'listening') {
+    if (speechRecognition) {
       try {
         speechRecognition.stop();
-        console.log('Speech recognition stopped');
       } catch (error) {
-        console.error('Error stopping speech recognition:', error);
+        console.error('Speech recognition stop error:', error);
       }
     }
-
-    // Stop recording
-    if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
-      try {
-        currentMediaRecorder.stop();
-        console.log('Recording stopped');
-      } catch (error) {
-        console.error('Error stopping recording:', error);
-      }
-    }
-
-    // Stop all tracks in the stream
+    
+    // Stop and cleanup stream
     if (currentStream) {
-      try {
-        currentStream.getTracks().forEach(track => {
-          track.stop();
-          console.log('Audio track stopped');
-        });
-        currentStream = null;
-      } catch (error) {
-        console.error('Error stopping audio tracks:', error);
-      }
+      currentStream.getTracks().forEach(track => track.stop());
+      currentStream = null;
     }
-
-    // Clear speech text
-    const speechText = document.querySelector('.speech-text');
-    if (speechText) speechText.textContent = '';
-
-    // Stop visualization
+    
+    // Stop visualizer animation
     if (visualizerAnimationFrame) {
       cancelAnimationFrame(visualizerAnimationFrame);
       visualizerAnimationFrame = null;
     }
-
-    console.log('Transmission stopped');
   }
   
   // Play radio transmission start/end sounds

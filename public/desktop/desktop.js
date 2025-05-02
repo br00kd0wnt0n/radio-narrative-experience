@@ -543,7 +543,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const conversationLog = document.querySelector('.conversation-log');
       if (!conversationLog) {
         console.error('Could not find conversation log element');
-        return { showActivity: () => {} }; // Return dummy function
+        return null;
       }
       
       // Create canvas for visualizer
@@ -557,74 +557,56 @@ document.addEventListener('DOMContentLoaded', function() {
       if (messagesElement) {
         conversationLog.insertBefore(visualizerCanvas, messagesElement);
       } else {
-        conversationLog.appendChild(visualizerCanvas); // Fallback
+        conversationLog.appendChild(visualizerCanvas);
       }
       
       // Get context
       const visualizerContext = visualizerCanvas.getContext('2d');
       
-      // Draw initial flat line
-      drawFlatLine();
+      // Create analyzer node
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
       
-      // Function to draw a flat line
-      function drawFlatLine() {
+      // Function to draw the visualizer
+      function draw() {
+        requestAnimationFrame(draw);
+        
+        // Get frequency data
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Clear canvas
         visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
         visualizerContext.fillStyle = '#222';
         visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-        visualizerContext.beginPath();
-        visualizerContext.strokeStyle = '#444';
-        visualizerContext.moveTo(0, visualizerCanvas.height / 2);
-        visualizerContext.lineTo(visualizerCanvas.width, visualizerCanvas.height / 2);
-        visualizerContext.stroke();
+        
+        // Draw bars
+        const barWidth = (visualizerCanvas.width / dataArray.length) * 2.5;
+        let x = 0;
+        
+        for (let i = 0; i < dataArray.length; i++) {
+          const barHeight = (dataArray[i] / 255) * visualizerCanvas.height;
+          
+          // Use different colors based on frequency
+          const hue = (i / dataArray.length) * 360;
+          visualizerContext.fillStyle = `hsl(${hue}, 100%, 50%)`;
+          
+          visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+          x += barWidth + 1;
+        }
       }
       
-      // Function to simulate activity
-      function simulateActivity(duration = 2000) {
-        let startTime = Date.now();
-        
-        function draw() {
-          const elapsed = Date.now() - startTime;
-          if (elapsed > duration) {
-            drawFlatLine();
-            return;
-          }
-          
-          // Clear canvas
-          visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-          visualizerContext.fillStyle = '#222';
-          visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-          
-          // Draw bars
-          const barCount = 20;
-          const barWidth = visualizerCanvas.width / barCount;
-          
-          for (let i = 0; i < barCount; i++) {
-            // Random height with decay over time
-            const decay = 1 - (elapsed / duration);
-            const randomFactor = Math.random() * 0.5 + 0.5; // 0.5 to 1.0
-            const height = (visualizerCanvas.height * 0.8) * randomFactor * decay;
-            
-            visualizerContext.fillStyle = isFrequencyActive ? '#4caf50' : '#666';
-            visualizerContext.fillRect(
-              i * barWidth,
-              (visualizerCanvas.height - height) / 2,
-              barWidth - 1,
-              height
-            );
-          }
-          
-          requestAnimationFrame(draw);
-        }
-        
-        draw();
-      }
+      // Start drawing
+      draw();
       
       return {
-        showActivity: simulateActivity
+        analyser: analyser,
+        canvas: visualizerCanvas,
+        context: visualizerContext
       };
     } catch (error) {
       console.error('Error setting up desktop visualizer:', error);
-      return { showActivity: () => {} }; // Return dummy function
+      return null;
     }
   }
 
@@ -823,6 +805,12 @@ document.addEventListener('DOMContentLoaded', function() {
       distortion.curve = createDistortionCurve(20);
       distortion.oversample = "4x";
       
+      // Connect to visualizer if available
+      if (desktopVisualizer && desktopVisualizer.analyser) {
+        source.connect(desktopVisualizer.analyser);
+        desktopVisualizer.analyser.connect(bandpass);
+      }
+      
       // Lower static volume during speech
       if (staticGainNode) {
         staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
@@ -855,9 +843,6 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch (error) {
       console.error('Error setting up audio processing:', error);
       addMessage('SYSTEM', 'Error processing audio transmission', 'system');
-      if (staticGainNode) {
-        adjustStaticVolume();
-      }
     }
   }
 
