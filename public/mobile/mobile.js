@@ -1,6 +1,8 @@
 // Mobile Interface Logic - public/mobile/mobile.js
-// Version: 1.0.1
-console.log('Mobile interface initializing... Version: 1.0.1 - Debug: Audio capture optimizations active');
+// Version: 1.0.2
+// Last Updated: 2024-03-19
+// Changes: Implemented direct audio capture using ScriptProcessor
+console.log('Mobile interface initializing... Version: 1.0.2 - Direct audio capture active');
 
 document.addEventListener('DOMContentLoaded', function() {
   // Elements
@@ -259,141 +261,74 @@ document.addEventListener('DOMContentLoaded', function() {
         fallbackToTextInput();
       }
 
-      // Get supported MIME types
-      const mimeTypes = [
-        'audio/webm',
-        'audio/webm;codecs=opus',
-        'audio/ogg;codecs=opus',
-        'audio/mp4'
-      ];
-      
-      let selectedMimeType = '';
-      for (const mimeType of mimeTypes) {
-        if (MediaRecorder.isTypeSupported(mimeType)) {
-          selectedMimeType = mimeType;
-          console.log('Using MIME type:', mimeType);
-          break;
-        }
-      }
-      
-      if (!selectedMimeType) {
-        throw new Error('No supported MIME types found');
-      }
-
-      // Create media recorder with selected MIME type and increased buffer size
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: selectedMimeType,
-        audioBitsPerSecond: 192000, // Increased bitrate for better quality
-        videoBitsPerSecond: 0
-      });
-      
-      console.log('MediaRecorder created with options:', {
-        mimeType: selectedMimeType,
-        audioBitsPerSecond: 192000,
-        state: mediaRecorder.state
-      });
-
-      const audioChunks = [];
+      // Create ScriptProcessor for direct audio capture
+      const bufferSize = 4096;
+      const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+      const audioData = [];
       let isProcessing = false;
-      let retryCount = 0;
-      const MAX_RETRIES = 3;
-      
-      mediaRecorder.ondataavailable = (event) => {
-        console.log('Data available event:', {
-          size: event.data.size,
-          type: event.data.type,
-          timestamp: Date.now()
-        });
+
+      processor.onaudioprocess = (e) => {
+        if (!isTransmitting) return;
         
-        if (event.data.size > 0) {
-          audioChunks.push(event.data);
+        const inputData = e.inputBuffer.getChannelData(0);
+        audioData.push(new Float32Array(inputData));
+        
+        // Process in chunks to avoid memory issues
+        if (audioData.length >= 10) { // Process every 10 chunks
+          processAudioChunk(audioData.splice(0, 10));
         }
       };
 
-      mediaRecorder.onstop = async () => {
-        if (isProcessing) return; // Prevent multiple processing attempts
+      // Function to process audio chunks
+      const processAudioChunk = async (chunks) => {
+        if (isProcessing || !socket || !socket.connected) return;
         isProcessing = true;
-        
-        console.log('MediaRecorder stopped, processing chunks:', {
-          chunkCount: audioChunks.length,
-          totalSize: audioChunks.reduce((acc, chunk) => acc + chunk.size, 0)
-        });
-
-        if (audioChunks.length === 0) {
-          console.log('No audio data recorded');
-          isProcessing = false;
-          return;
-        }
 
         try {
-          const audioBlob = new Blob(audioChunks, { type: selectedMimeType });
-          console.log('Audio blob created:', {
-            size: audioBlob.size,
-            type: audioBlob.type
+          // Convert Float32Array to Int16Array for better compression
+          const mergedData = new Float32Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+          let offset = 0;
+          for (const chunk of chunks) {
+            mergedData.set(chunk, offset);
+            offset += chunk.length;
+          }
+
+          // Convert to Int16Array
+          const int16Data = new Int16Array(mergedData.length);
+          for (let i = 0; i < mergedData.length; i++) {
+            int16Data[i] = Math.max(-32768, Math.min(32767, Math.round(mergedData[i] * 32767)));
+          }
+
+          // Convert to base64
+          const base64Audio = btoa(String.fromCharCode.apply(null, new Uint8Array(int16Data.buffer)));
+
+          // Send audio data
+          socket.emit('audio_message', {
+            audio: base64Audio,
+            frequency: currentFrequency,
+            timestamp: Date.now(),
+            format: 'raw'
           });
 
-          const reader = new FileReader();
-          
-          reader.onloadend = () => {
-            const base64Audio = reader.result.split(',')[1];
-            console.log('Audio data ready to send:', {
-              base64Length: base64Audio.length,
-              timestamp: Date.now()
-            });
-            
-            if (socket && socket.connected) {
-              socket.emit('audio_message', {
-                audio: base64Audio,
-                frequency: currentFrequency,
-                timestamp: Date.now(),
-                mimeType: selectedMimeType
-              });
-              console.log('Audio data sent');
-              retryCount = 0; // Reset retry count on successful send
-            } else {
-              console.error('Socket not connected, cannot send audio');
-              handleSendError();
-            }
-            isProcessing = false;
-          };
-          
-          reader.onerror = (error) => {
-            console.error('Error reading audio data:', error);
-            handleSendError();
-            isProcessing = false;
-          };
-          
-          reader.readAsDataURL(audioBlob);
+          console.log('Audio chunk sent:', {
+            size: base64Audio.length,
+            timestamp: Date.now()
+          });
         } catch (error) {
-          console.error('Error processing audio data:', error);
-          handleSendError();
+          console.error('Error processing audio chunk:', error);
+        } finally {
           isProcessing = false;
         }
       };
 
-      // Error handling function
-      const handleSendError = () => {
-        if (retryCount < MAX_RETRIES) {
-          retryCount++;
-          console.log(`Retrying audio send (attempt ${retryCount}/${MAX_RETRIES})...`);
-          setTimeout(() => {
-            if (audioChunks.length > 0) {
-              mediaRecorder.onstop(); // Retry processing
-            }
-          }, 1000 * retryCount); // Exponential backoff
-        } else {
-          console.error('Max retries reached, giving up');
-          addMessage('SYSTEM', 'Failed to send audio after multiple attempts', 'system');
-        }
-      };
-
-      // Start recording with a larger time slice for better stability
-      mediaRecorder.start(100);
-      console.log('MediaRecorder started');
+      // Connect the processor
+      streamSource.connect(processor);
+      processor.connect(audioContext.destination);
 
       // Store references for cleanup
       currentStream = stream;
-      currentMediaRecorder = mediaRecorder;
+      currentProcessor = processor;
+      currentSource = streamSource;
 
     } catch (error) {
       console.error('Transmission error:', error);
@@ -830,30 +765,32 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     
-    // Add delay before stopping MediaRecorder to ensure all audio is captured
-    if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
+    // Cleanup audio processing
+    if (currentProcessor) {
       try {
-        console.log('Scheduling MediaRecorder stop...');
-        setTimeout(() => {
-          if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
-            console.log('Stopping MediaRecorder...');
-            currentMediaRecorder.stop();
-          }
-        }, 200); // 200ms delay to ensure all audio is captured
+        currentProcessor.disconnect();
+        console.log('Disconnected audio processor');
       } catch (error) {
-        console.error('Error stopping media recorder:', error);
+        console.error('Error disconnecting processor:', error);
       }
     }
     
-    // Stop and cleanup stream with delay
+    if (currentSource) {
+      try {
+        currentSource.disconnect();
+        console.log('Disconnected audio source');
+      } catch (error) {
+        console.error('Error disconnecting source:', error);
+      }
+    }
+    
+    // Stop and cleanup stream
     if (currentStream) {
-      setTimeout(() => {
-        currentStream.getTracks().forEach(track => {
-          track.stop();
-          console.log('Stopped audio track');
-        });
-        currentStream = null;
-      }, 300); // 300ms delay to ensure MediaRecorder has finished
+      currentStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped audio track');
+      });
+      currentStream = null;
     }
     
     // Stop visualizer animation
