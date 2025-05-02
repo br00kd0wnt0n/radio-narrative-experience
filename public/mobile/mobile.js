@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentAudioContext = null;
   let currentAudioChunks = [];
   let currentFrequency = null;
+  let isProcessingMessage = false;  // Add flag to prevent duplicate messages
   
   // Initialize audio context immediately
   try {
@@ -100,12 +101,13 @@ document.addEventListener('DOMContentLoaded', function() {
           speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
         }
 
-        if (finalTranscript) {
+        if (finalTranscript && !isProcessingMessage) {
           speechText.textContent = finalTranscript;
           if (finalTranscript.trim() !== '' && socket && socket.connected) {
             console.log('Sending text message:', finalTranscript);
             addMessage('YOU', finalTranscript, 'user');
             // Send text message with proper format
+            isProcessingMessage = true;
             socket.emit('audio_message', {
               message: finalTranscript,
               type: 'text',
@@ -288,7 +290,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Function to process audio chunks
       const processAudioChunk = async (chunks) => {
-        if (isProcessing || !socket || !socket.connected) return;
+        if (isProcessing || !socket || !socket.connected || isProcessingMessage) return;
         isProcessing = true;
 
         try {
@@ -311,8 +313,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
           // Send audio data with proper format
           const audioMessage = {
-            message: base64Audio, // Use 'message' instead of 'audio'
-            type: 'audio',       // Add type to indicate this is audio data
+            message: base64Audio,
+            type: 'audio',
             frequency: currentFrequency || 'unknown',
             timestamp: Date.now(),
             format: 'raw'
@@ -325,6 +327,7 @@ document.addEventListener('DOMContentLoaded', function() {
             dataSize: base64Audio.length
           });
 
+          isProcessingMessage = true;
           socket.emit('audio_message', audioMessage);
 
         } catch (error) {
@@ -522,8 +525,9 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage('SYSTEM', 'Received invalid response format', 'system');
       }
       
-      // Clear speech status
+      // Clear speech status and reset processing flag
       clearSpeechStatus();
+      isProcessingMessage = false;
     });
     
     // Add character response handling - only handle if not already handled by ai_response
@@ -853,6 +857,11 @@ document.addEventListener('DOMContentLoaded', function() {
       cancelAnimationFrame(visualizerAnimationFrame);
       visualizerAnimationFrame = null;
     }
+
+    // Reset processing flag after a short delay
+    setTimeout(() => {
+      isProcessingMessage = false;
+    }, 1000);
   }
   
   // Play radio transmission start/end sounds
