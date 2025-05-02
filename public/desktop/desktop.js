@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', function() {
         locationDisplay.textContent = `Location: ${data.location}`;
         
         // Add finding to the log
-        addFinding(data.character, currentFrequency, data.location);
+        addFinding(data.character, currentFrequency, data.location, data.info);
         
         // Update narrative progress if provided
         if (data.narrativeContext) {
@@ -671,7 +671,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Function to add a finding to the log
-  function addFinding(character, frequency, location, info) {
+  function addFinding(character, frequency, location, info = '') {
     const notepadContent = document.querySelector('.notepad-content');
     if (!notepadContent) return;
 
@@ -681,7 +681,7 @@ document.addEventListener('DOMContentLoaded', function() {
       // Update existing finding
       const infoElement = existingFinding.querySelector('.finding-info');
       if (infoElement) {
-        infoElement.textContent = info;
+        infoElement.textContent = info || 'No additional information';
       }
     } else {
       // Create new finding
@@ -693,8 +693,8 @@ document.addEventListener('DOMContentLoaded', function() {
           <span class="finding-character">${character}</span>
           <span class="finding-frequency">${frequency} MHz</span>
         </div>
-        <div class="finding-location">${location}</div>
-        <div class="finding-info">${info}</div>
+        <div class="finding-location">${location || 'Location unknown'}</div>
+        <div class="finding-info">${info || 'No additional information'}</div>
       `;
       notepadContent.appendChild(finding);
     }
