@@ -29,6 +29,9 @@ document.addEventListener('DOMContentLoaded', function() {
   let visualizerCanvas = null;
   let visualizerContext = null;
   let visualizerData = null;
+  let currentStream = null;
+  let currentMediaRecorder = null;
+  let visualizerAnimationFrame = null;
   
   // Initialize audio context immediately
   try {
@@ -143,7 +146,7 @@ document.addEventListener('DOMContentLoaded', function() {
   requestMicrophonePermission();
 
   // Update push-to-talk button setup
-  function setupPushToTalk() {
+  async function setupPushToTalk() {
     console.log('Setting up push-to-talk button');
     
     // Prevent any default touch behaviors on the button
@@ -155,54 +158,32 @@ document.addEventListener('DOMContentLoaded', function() {
     // Touch events for mobile
     pushToTalkButton.addEventListener('touchstart', async (e) => {
       e.preventDefault();
-      e.stopPropagation();
-      console.log('Push-to-talk touch start');
-      
-      if (!isPaired || !isFrequencyActive) {
-        console.log('Cannot transmit: not paired or no active frequency');
-        return;
-      }
-
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        startTransmitting(e, stream);
+        await startTransmitting(e, stream);
       } catch (error) {
-        console.error('Microphone access error:', error);
-        addMessage('SYSTEM', 'Microphone access denied. Please enable microphone permissions.', 'system');
+        console.error('Failed to get audio stream:', error);
+        addMessage('SYSTEM', 'Failed to access microphone: ' + error.message, 'system');
       }
     }, { passive: false });
 
-    pushToTalkButton.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log('Push-to-talk touch end');
-      stopTransmitting(e);
-    }, { passive: false });
-
-    // Also handle touchcancel
-    pushToTalkButton.addEventListener('touchcancel', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log('Push-to-talk touch cancelled');
-      stopTransmitting(e);
-    }, { passive: false });
+    pushToTalkButton.addEventListener('touchend', stopTransmitting);
+    pushToTalkButton.addEventListener('touchcancel', stopTransmitting);
 
     // Mouse events for desktop testing
     pushToTalkButton.addEventListener('mousedown', async (e) => {
-      if (!isPaired || !isFrequencyActive) return;
-
+      e.preventDefault();
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        startTransmitting(e, stream);
+        await startTransmitting(e, stream);
       } catch (error) {
-        console.error('Microphone access error:', error);
-        addMessage('SYSTEM', 'Microphone access denied. Please enable microphone permissions.', 'system');
+        console.error('Failed to get audio stream:', error);
+        addMessage('SYSTEM', 'Failed to access microphone: ' + error.message, 'system');
       }
     });
 
-    pushToTalkButton.addEventListener('mouseup', (e) => {
-      stopTransmitting(e);
-    });
+    pushToTalkButton.addEventListener('mouseup', stopTransmitting);
+    pushToTalkButton.addEventListener('mouseleave', stopTransmitting);
 
     // Add visual feedback
     pushToTalkButton.addEventListener('touchstart', () => {
@@ -258,6 +239,35 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Speech recognition not available, falling back to text input');
         fallbackToTextInput();
       }
+
+      // Start recording
+      const mediaRecorder = new MediaRecorder(stream);
+      const audioChunks = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+          const base64Audio = reader.result.split(',')[1];
+          socket.emit('audio_message', {
+            audio: base64Audio,
+            frequency: currentFrequency
+          });
+        };
+      };
+
+      mediaRecorder.start();
+      console.log('Started recording');
+
+      // Store references for cleanup
+      currentStream = stream;
+      currentMediaRecorder = mediaRecorder;
+
     } catch (error) {
       console.error('Transmission error:', error);
       addMessage('SYSTEM', `Error: ${error.message}`, 'system');
@@ -618,7 +628,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Continue animation
-    requestAnimationFrame(drawVisualizer);
+    visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
   }
   
   // Add message to the conversation log
@@ -681,30 +691,60 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Stop audio transmission
   function stopTransmitting(e) {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-    
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!isTransmitting) return;
-    
+
+    console.log('Stopping transmission...');
     isTransmitting = false;
     pushToTalkButton.classList.remove('active');
-    pushToTalkButton.classList.remove('pressed');
     document.querySelector('.transmission-indicator').classList.remove('active');
-    
+
     // Stop speech recognition
-    if (speechRecognition) {
+    if (speechRecognition && speechRecognition.state === 'listening') {
       try {
-        if (speechRecognition.state === 'listening') {
-          speechRecognition.stop();
-        }
+        speechRecognition.stop();
+        console.log('Speech recognition stopped');
       } catch (error) {
-        console.error('Speech recognition stop error:', error);
+        console.error('Error stopping speech recognition:', error);
       }
     }
-    
-    // Update visualizer (it will draw flat line on next frame)
+
+    // Stop recording
+    if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
+      try {
+        currentMediaRecorder.stop();
+        console.log('Recording stopped');
+      } catch (error) {
+        console.error('Error stopping recording:', error);
+      }
+    }
+
+    // Stop all tracks in the stream
+    if (currentStream) {
+      try {
+        currentStream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Audio track stopped');
+        });
+        currentStream = null;
+      } catch (error) {
+        console.error('Error stopping audio tracks:', error);
+      }
+    }
+
+    // Clear speech text
+    const speechText = document.querySelector('.speech-text');
+    if (speechText) speechText.textContent = '';
+
+    // Stop visualization
+    if (visualizerAnimationFrame) {
+      cancelAnimationFrame(visualizerAnimationFrame);
+      visualizerAnimationFrame = null;
+    }
+
+    console.log('Transmission stopped');
   }
   
   // Play radio transmission start/end sounds
@@ -1003,13 +1043,29 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up push-to-talk
     setupPushToTalk();
     
-    // Initialize audio on first user interaction
-    document.addEventListener('click', () => {
-      if (!audioContext) {
-        initAudio();
-        addMessage('SYSTEM', 'Audio initialized', 'system');
+    // Initialize audio context immediately
+    if (!audioContext) {
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('Audio context initialized');
+        addMessage('SYSTEM', 'Audio system initialized', 'system');
+      } catch (error) {
+        console.error('Failed to initialize audio context:', error);
+        addMessage('SYSTEM', 'Failed to initialize audio system', 'system');
       }
-    }, { once: true });
+    }
+    
+    // Initialize speech recognition immediately
+    if (!speechRecognition) {
+      const speechInit = initSpeechRecognition();
+      if (speechInit) {
+        console.log('Speech recognition initialized');
+        addMessage('SYSTEM', 'Speech recognition ready', 'system');
+      } else {
+        console.log('Speech recognition not available');
+        addMessage('SYSTEM', 'Speech recognition not available', 'system');
+      }
+    }
     
     // Initially disable push-to-talk until paired and on active frequency
     pushToTalkButton.disabled = true;
@@ -1017,22 +1073,29 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize speech UI
     initSpeechUI();
     
-    // Add these lines
-    addMessage('SYSTEM', 'Initializing audio system...', 'system');
-    
     // Request permissions early
     const permissionButton = document.createElement('button');
     permissionButton.textContent = 'Enable Microphone';
     permissionButton.className = 'permission-button';
     permissionButton.onclick = async () => {
-      const audioInit = await initAudioRecording();
-      const speechInit = initSpeechRecognition();
-      
-      if (audioInit && speechInit) {
-        addMessage('SYSTEM', 'Voice transmission ready.', 'system');
-        permissionButton.style.display = 'none';
-      } else {
-        addMessage('SYSTEM', 'Using text input as fallback.', 'system');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Microphone permission granted');
+        stream.getTracks().forEach(track => track.stop()); // Stop the stream after getting permission
+        
+        // Initialize audio recording
+        const audioInit = await initAudioRecording();
+        const speechInit = initSpeechRecognition();
+        
+        if (audioInit && speechInit) {
+          addMessage('SYSTEM', 'Voice transmission ready.', 'system');
+          permissionButton.style.display = 'none';
+        } else {
+          addMessage('SYSTEM', 'Using text input as fallback.', 'system');
+        }
+      } catch (error) {
+        console.error('Microphone permission denied:', error);
+        addMessage('SYSTEM', 'Microphone access denied. Please enable permissions.', 'system');
       }
     };
     document.body.appendChild(permissionButton);
@@ -1044,4 +1107,5 @@ document.addEventListener('DOMContentLoaded', function() {
   // Start the application
   init();
 });
+
 
