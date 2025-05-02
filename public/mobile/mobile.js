@@ -510,10 +510,13 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('ai_response', (data) => {
       console.log('Received AI response:', data);
       
-      // Handle the response format
-      if (data && (data.message || data.text)) {
+      // Validate and handle the response format
+      if (data) {
+        const message = data.message || data.text || 'Received response';
+        const character = data.character || 'AI';
+        
         // Update UI with the message
-        addMessage(data.character || 'AI', data.message || data.text, 'character');
+        addMessage(character, message, 'character');
         
         // Play audio if available
         if (data.audioPath) {
@@ -529,8 +532,8 @@ document.addEventListener('DOMContentLoaded', function() {
           console.log("No audio path available in response");
         }
       } else {
-        console.error('Unexpected response format:', data);
-        addMessage('SYSTEM', 'Received invalid response format', 'system');
+        console.error('Empty response received');
+        addMessage('SYSTEM', 'Received empty response', 'system');
       }
       
       // Clear speech status and reset processing flag
@@ -548,9 +551,12 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       
-      if (data && data.message) {
+      if (data) {
+        const message = data.message || 'Received message';
+        const character = data.character || 'Unknown';
+        
         // Handle direct message format
-        addMessage(data.character || 'Unknown', data.message, 'character');
+        addMessage(character, message, 'character');
         clearSpeechStatus();
 
         // Play audio if available in direct format
@@ -559,7 +565,7 @@ document.addEventListener('DOMContentLoaded', function() {
           playGeneratedAudio(data.audioPath);
         }
       } else {
-        console.error("Invalid character response data:", data);
+        console.error("Invalid character response data");
         addMessage('SYSTEM', 'Received invalid response from server', 'system');
       }
     });
@@ -763,11 +769,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const messageText = document.createElement('div');
     messageText.className = 'message-text';
     
-    // Handle different text formats
+    // Handle different text formats and prevent undefined
     if (typeof text === 'object') {
-      messageText.textContent = text.message || text.text || JSON.stringify(text);
-    } else {
+      if (text.message) {
+        messageText.textContent = text.message;
+      } else if (text.text) {
+        messageText.textContent = text.text;
+      } else {
+        messageText.textContent = 'Received message';
+      }
+    } else if (typeof text === 'string' && text.trim() !== '') {
       messageText.textContent = text;
+    } else {
+      messageText.textContent = 'Received message';
     }
     
     messageDiv.appendChild(messageInfo);
