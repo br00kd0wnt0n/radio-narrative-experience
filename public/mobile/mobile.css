@@ -242,11 +242,27 @@ body {
 
 /* Speech Recognition Display */
 .speech-display {
-  width: 100%;
-  margin-top: 10px;
-  background-color: #222;
-  border-radius: 4px;
-  padding: 10px;
+  position: absolute;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: #4caf50;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  text-align: center;
+  min-width: 200px;
+  max-width: 80%;
+  display: none;
+  z-index: 1000;
+  border: 2px solid #4caf50;
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+}
+
+.speech-display.active {
+  display: block;
 }
 
 .speech-text {
