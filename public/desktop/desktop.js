@@ -62,6 +62,32 @@ document.addEventListener('DOMContentLoaded', function() {
       if (data && (data.message || data.text)) {
         addMessage(data.character, data.message || data.text, 'character');
         
+        // Add finding if it contains key information
+        if (data.text && data.text.includes('experiment')) {
+          addFinding(data.character, currentFrequency, '', 'Mentioned an experiment');
+        }
+        if (data.text && data.text.includes('breach')) {
+          addFinding(data.character, currentFrequency, '', 'Reported a containment breach');
+        }
+        if (data.text && data.text.includes('creature')) {
+          addFinding(data.character, currentFrequency, '', 'Sighted an unknown creature');
+        }
+        if (data.text && data.text.includes('evacuation')) {
+          addFinding(data.character, currentFrequency, '', 'Mentioned evacuation procedures');
+        }
+        if (data.text && data.text.includes('government')) {
+          addFinding(data.character, currentFrequency, '', 'Referenced government involvement');
+        }
+        if (data.text && data.text.includes('containment')) {
+          addFinding(data.character, currentFrequency, '', 'Discussed containment systems');
+        }
+        if (data.text && data.text.includes('radiation')) {
+          addFinding(data.character, currentFrequency, '', 'Reported radiation effects');
+        }
+        if (data.text && data.text.includes('mutation')) {
+          addFinding(data.character, currentFrequency, '', 'Observed mutations');
+        }
+        
         // Play audio if available
         if (data.audioPath) {
           console.log('Playing audio from path:', data.audioPath);
@@ -104,6 +130,9 @@ document.addEventListener('DOMContentLoaded', function() {
         frequencyDisplay.textContent = `Active: ${currentFrequency} MHz`;
         characterDisplay.textContent = `Character: ${data.character}`;
         locationDisplay.textContent = `Location: ${data.location}`;
+        
+        // Add finding to the log
+        addFinding(data.character, currentFrequency, data.location);
         
         // Update narrative progress if provided
         if (data.narrativeContext) {
@@ -652,31 +681,60 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage('SYSTEM', 'Audio initialized', 'system');
       }
     }, { once: true });
+
+    // Create findings section
+    createFindingsSection();
   }
   
-  // Add debug button to the interface
-  const debugButton = document.createElement('button');
-  debugButton.textContent = 'Debug Signal';
-  debugButton.style.position = 'fixed';
-  debugButton.style.bottom = '10px';
-  debugButton.style.right = '10px';
-  debugButton.style.zIndex = '1000';
-  document.body.appendChild(debugButton);
-
-  debugButton.addEventListener('click', () => {
-    console.log('Current frequency:', currentFrequency);
-    console.log('Is frequency active:', isFrequencyActive);
-    console.log('Active frequencies:', activeFrequencies);
+  // Function to create and manage the findings section
+  function createFindingsSection() {
+    const findingsSection = document.createElement('div');
+    findingsSection.className = 'findings-section';
+    findingsSection.innerHTML = `
+      <div class="findings-title">Findings Log</div>
+      <div class="findings-content"></div>
+    `;
     
-    // Test each signal level
-    for (let i = 0; i <= 5; i++) {
-      setTimeout(() => {
-        console.log(`Setting signal level to ${i}`);
-        updateSignalBars(i);
-      }, i * 500);
+    // Add to the container after the conversation log
+    const container = document.querySelector('.container');
+    if (container) {
+      container.appendChild(findingsSection);
     }
-  });
-  
+  }
+
+  // Function to add a finding to the log
+  function addFinding(character, frequency, location, info) {
+    const findingsContent = document.querySelector('.findings-content');
+    if (!findingsContent) return;
+
+    const finding = document.createElement('div');
+    finding.className = 'finding';
+    
+    // Check if this character is already logged
+    const existingFinding = findingsContent.querySelector(`[data-character="${character}"]`);
+    if (existingFinding) {
+      // Update existing finding
+      const infoList = existingFinding.querySelector('.finding-info');
+      if (info && !infoList.textContent.includes(info)) {
+        infoList.innerHTML += `<li>${info}</li>`;
+      }
+    } else {
+      // Create new finding
+      finding.setAttribute('data-character', character);
+      finding.innerHTML = `
+        <div class="finding-header">
+          <span class="finding-character">${character}</span>
+          <span class="finding-frequency">${frequency} MHz</span>
+        </div>
+        <div class="finding-location">Location: ${location}</div>
+        <ul class="finding-info">
+          ${info ? `<li>${info}</li>` : ''}
+        </ul>
+      `;
+      findingsContent.appendChild(finding);
+    }
+  }
+
   // Start the application
   init();
 
