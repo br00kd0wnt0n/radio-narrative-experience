@@ -280,19 +280,23 @@ document.addEventListener('DOMContentLoaded', function() {
         throw new Error('No supported MIME types found');
       }
 
-      // Create media recorder with selected MIME type
+      // Create media recorder with selected MIME type and increased buffer size
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: selectedMimeType,
-        audioBitsPerSecond: 128000
+        audioBitsPerSecond: 192000, // Increased bitrate for better quality
+        videoBitsPerSecond: 0
       });
       
       console.log('MediaRecorder created with options:', {
         mimeType: selectedMimeType,
-        audioBitsPerSecond: 128000,
+        audioBitsPerSecond: 192000,
         state: mediaRecorder.state
       });
 
       const audioChunks = [];
+      let isProcessing = false;
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
       
       mediaRecorder.ondataavailable = (event) => {
         console.log('Data available event:', {
@@ -307,6 +311,9 @@ document.addEventListener('DOMContentLoaded', function() {
       };
 
       mediaRecorder.onstop = async () => {
+        if (isProcessing) return; // Prevent multiple processing attempts
+        isProcessing = true;
+        
         console.log('MediaRecorder stopped, processing chunks:', {
           chunkCount: audioChunks.length,
           totalSize: audioChunks.reduce((acc, chunk) => acc + chunk.size, 0)
@@ -314,6 +321,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (audioChunks.length === 0) {
           console.log('No audio data recorded');
+          isProcessing = false;
           return;
         }
 
@@ -341,23 +349,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 mimeType: selectedMimeType
               });
               console.log('Audio data sent');
+              retryCount = 0; // Reset retry count on successful send
             } else {
               console.error('Socket not connected, cannot send audio');
+              handleSendError();
             }
+            isProcessing = false;
           };
           
           reader.onerror = (error) => {
             console.error('Error reading audio data:', error);
+            handleSendError();
+            isProcessing = false;
           };
           
           reader.readAsDataURL(audioBlob);
         } catch (error) {
           console.error('Error processing audio data:', error);
+          handleSendError();
+          isProcessing = false;
         }
       };
 
-      // Start recording with a small time slice
-      mediaRecorder.start(50);
+      // Error handling function
+      const handleSendError = () => {
+        if (retryCount < MAX_RETRIES) {
+          retryCount++;
+          console.log(`Retrying audio send (attempt ${retryCount}/${MAX_RETRIES})...`);
+          setTimeout(() => {
+            if (audioChunks.length > 0) {
+              mediaRecorder.onstop(); // Retry processing
+            }
+          }, 1000 * retryCount); // Exponential backoff
+        } else {
+          console.error('Max retries reached, giving up');
+          addMessage('SYSTEM', 'Failed to send audio after multiple attempts', 'system');
+        }
+      };
+
+      // Start recording with a larger time slice for better stability
+      mediaRecorder.start(100);
       console.log('MediaRecorder started');
 
       // Store references for cleanup
@@ -799,23 +830,30 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     
-    // Stop and cleanup recording
+    // Add delay before stopping MediaRecorder to ensure all audio is captured
     if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
       try {
-        console.log('Stopping MediaRecorder...');
-        currentMediaRecorder.stop();
+        console.log('Scheduling MediaRecorder stop...');
+        setTimeout(() => {
+          if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
+            console.log('Stopping MediaRecorder...');
+            currentMediaRecorder.stop();
+          }
+        }, 200); // 200ms delay to ensure all audio is captured
       } catch (error) {
         console.error('Error stopping media recorder:', error);
       }
     }
     
-    // Stop and cleanup stream
+    // Stop and cleanup stream with delay
     if (currentStream) {
-      currentStream.getTracks().forEach(track => {
-        track.stop();
-        console.log('Stopped audio track');
-      });
-      currentStream = null;
+      setTimeout(() => {
+        currentStream.getTracks().forEach(track => {
+          track.stop();
+          console.log('Stopped audio track');
+        });
+        currentStream = null;
+      }, 300); // 300ms delay to ensure MediaRecorder has finished
     }
     
     // Stop visualizer animation
