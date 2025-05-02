@@ -1,4 +1,7 @@
 // Desktop Interface Logic - public/desktop/desktop.js
+// Version: 1.0.0
+console.log('Desktop interface initializing... Version: 1.0.0');
+
 document.addEventListener('DOMContentLoaded', function() {
   // Elements
   const tuningKnob = document.getElementById('tuning-knob');

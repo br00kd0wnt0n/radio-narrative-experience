@@ -1,5 +1,6 @@
 // Mobile Interface Logic - public/mobile/mobile.js
-console.log('Mobile interface initializing...');
+// Version: 1.0.0
+console.log('Mobile interface initializing... Version: 1.0.0');
 
 document.addEventListener('DOMContentLoaded', function() {
   // Elements
@@ -258,27 +259,110 @@ document.addEventListener('DOMContentLoaded', function() {
         fallbackToTextInput();
       }
 
-      // Create a simple audio recorder
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      // Get supported MIME types
+      const mimeTypes = [
+        'audio/webm',
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4'
+      ];
       
+      let selectedMimeType = '';
+      for (const mimeType of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(mimeType)) {
+          selectedMimeType = mimeType;
+          console.log('Using MIME type:', mimeType);
+          break;
+        }
+      }
+      
+      if (!selectedMimeType) {
+        throw new Error('No supported MIME types found');
+      }
+
+      // Create media recorder with selected MIME type
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: selectedMimeType,
+        audioBitsPerSecond: 128000
+      });
+      
+      console.log('MediaRecorder created with options:', {
+        mimeType: selectedMimeType,
+        audioBitsPerSecond: 128000,
+        state: mediaRecorder.state
+      });
+
       const audioChunks = [];
       
-      processor.onaudioprocess = (e) => {
-        if (!isTransmitting) return;
+      mediaRecorder.ondataavailable = (event) => {
+        console.log('Data available event:', {
+          size: event.data.size,
+          type: event.data.type,
+          timestamp: Date.now()
+        });
         
-        const inputData = e.inputBuffer.getChannelData(0);
-        audioChunks.push(new Float32Array(inputData));
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
       };
-      
-      streamSource.connect(processor);
-      processor.connect(audioContext.destination);
-      
+
+      mediaRecorder.onstop = async () => {
+        console.log('MediaRecorder stopped, processing chunks:', {
+          chunkCount: audioChunks.length,
+          totalSize: audioChunks.reduce((acc, chunk) => acc + chunk.size, 0)
+        });
+
+        if (audioChunks.length === 0) {
+          console.log('No audio data recorded');
+          return;
+        }
+
+        try {
+          const audioBlob = new Blob(audioChunks, { type: selectedMimeType });
+          console.log('Audio blob created:', {
+            size: audioBlob.size,
+            type: audioBlob.type
+          });
+
+          const reader = new FileReader();
+          
+          reader.onloadend = () => {
+            const base64Audio = reader.result.split(',')[1];
+            console.log('Audio data ready to send:', {
+              base64Length: base64Audio.length,
+              timestamp: Date.now()
+            });
+            
+            if (socket && socket.connected) {
+              socket.emit('audio_message', {
+                audio: base64Audio,
+                frequency: currentFrequency,
+                timestamp: Date.now(),
+                mimeType: selectedMimeType
+              });
+              console.log('Audio data sent');
+            } else {
+              console.error('Socket not connected, cannot send audio');
+            }
+          };
+          
+          reader.onerror = (error) => {
+            console.error('Error reading audio data:', error);
+          };
+          
+          reader.readAsDataURL(audioBlob);
+        } catch (error) {
+          console.error('Error processing audio data:', error);
+        }
+      };
+
+      // Start recording with a small time slice
+      mediaRecorder.start(50);
+      console.log('MediaRecorder started');
+
       // Store references for cleanup
       currentStream = stream;
-      currentProcessor = processor;
-      currentSource = streamSource;
-      currentAudioContext = audioContext;
-      currentAudioChunks = audioChunks;
+      currentMediaRecorder = mediaRecorder;
 
     } catch (error) {
       console.error('Transmission error:', error);
@@ -715,55 +799,17 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     
-    // Process and send audio data
-    if (currentAudioChunks && currentAudioChunks.length > 0) {
+    // Stop and cleanup recording
+    if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
       try {
-        // Convert audio chunks to a single Float32Array
-        const totalLength = currentAudioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
-        const audioData = new Float32Array(totalLength);
-        let offset = 0;
-        
-        for (const chunk of currentAudioChunks) {
-          audioData.set(chunk, offset);
-          offset += chunk.length;
-        }
-        
-        // Convert to 16-bit PCM
-        const pcmData = new Int16Array(audioData.length);
-        for (let i = 0; i < audioData.length; i++) {
-          pcmData[i] = Math.max(-32768, Math.min(32767, Math.round(audioData[i] * 32767)));
-        }
-        
-        // Convert to base64
-        const buffer = pcmData.buffer;
-        const base64Audio = btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)));
-        
-        // Send audio data
-        if (socket && socket.connected) {
-          socket.emit('audio_message', {
-            audio: base64Audio,
-            frequency: currentFrequency,
-            timestamp: Date.now(),
-            sampleRate: currentAudioContext.sampleRate
-          });
-          console.log('Audio data sent');
-        }
+        console.log('Stopping MediaRecorder...');
+        currentMediaRecorder.stop();
       } catch (error) {
-        console.error('Error processing audio data:', error);
+        console.error('Error stopping media recorder:', error);
       }
     }
     
-    // Cleanup audio processing
-    if (currentProcessor) {
-      currentProcessor.disconnect();
-      currentProcessor = null;
-    }
-    
-    if (currentSource) {
-      currentSource.disconnect();
-      currentSource = null;
-    }
-    
+    // Stop and cleanup stream
     if (currentStream) {
       currentStream.getTracks().forEach(track => {
         track.stop();
@@ -777,9 +823,6 @@ document.addEventListener('DOMContentLoaded', function() {
       cancelAnimationFrame(visualizerAnimationFrame);
       visualizerAnimationFrame = null;
     }
-    
-    // Clear audio chunks
-    currentAudioChunks = [];
   }
   
   // Play radio transmission start/end sounds
