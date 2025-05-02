@@ -536,80 +536,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
-  // Create a fake visualizer that responds to incoming messages
-  function setupDesktopVisualizer() {
-    try {
-      // First check if the element exists
-      const conversationLog = document.querySelector('.conversation-log');
-      if (!conversationLog) {
-        console.error('Could not find conversation log element');
-        return null;
-      }
-      
-      // Create canvas for visualizer
-      const visualizerCanvas = document.createElement('canvas');
-      visualizerCanvas.className = 'audio-visualizer';
-      visualizerCanvas.width = 300;
-      visualizerCanvas.height = 60;
-      
-      // Insert at correct position
-      const messagesElement = document.querySelector('.messages');
-      if (messagesElement) {
-        conversationLog.insertBefore(visualizerCanvas, messagesElement);
-      } else {
-        conversationLog.appendChild(visualizerCanvas);
-      }
-      
-      // Get context
-      const visualizerContext = visualizerCanvas.getContext('2d');
-      
-      // Create analyzer node
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      
-      // Function to draw the visualizer
-      function draw() {
-        requestAnimationFrame(draw);
-        
-        // Get frequency data
-        analyser.getByteFrequencyData(dataArray);
-        
-        // Clear canvas
-        visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-        visualizerContext.fillStyle = '#222';
-        visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-        
-        // Draw bars
-        const barWidth = (visualizerCanvas.width / dataArray.length) * 2.5;
-        let x = 0;
-        
-        for (let i = 0; i < dataArray.length; i++) {
-          const barHeight = (dataArray[i] / 255) * visualizerCanvas.height;
-          
-          // Use different colors based on frequency
-          const hue = (i / dataArray.length) * 360;
-          visualizerContext.fillStyle = `hsl(${hue}, 100%, 50%)`;
-          
-          visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
-          x += barWidth + 1;
-        }
-      }
-      
-      // Start drawing
-      draw();
-      
-      return {
-        analyser: analyser,
-        canvas: visualizerCanvas,
-        context: visualizerContext
-      };
-    } catch (error) {
-      console.error('Error setting up desktop visualizer:', error);
-      return null;
-    }
-  }
-
   // Initialize the application
   function init() {
     // Add transmission indicator
@@ -653,14 +579,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize tuning knob
     initTuningKnob();
     
-    // Initialize desktop visualizer
-    const desktopVisualizer = setupDesktopVisualizer();
-    
     // Initialize audio on first user interaction
     document.addEventListener('click', () => {
       if (!audioContext) {
         initAudio();
         addMessage('SYSTEM', 'Audio initialized', 'system');
+        // Initialize desktop visualizer after audio context is created
+        desktopVisualizer = setupDesktopVisualizer();
       }
     }, { once: true });
 
@@ -1024,5 +949,84 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Continue animation
     requestAnimationFrame(drawVisualizer);
+  }
+
+  // Create a fake visualizer that responds to incoming messages
+  function setupDesktopVisualizer() {
+    try {
+      if (!audioContext) {
+        console.error('Audio context not initialized');
+        return null;
+      }
+
+      // First check if the element exists
+      const conversationLog = document.querySelector('.conversation-log');
+      if (!conversationLog) {
+        console.error('Could not find conversation log element');
+        return null;
+      }
+      
+      // Create canvas for visualizer
+      const visualizerCanvas = document.createElement('canvas');
+      visualizerCanvas.className = 'audio-visualizer';
+      visualizerCanvas.width = 300;
+      visualizerCanvas.height = 60;
+      
+      // Insert at correct position
+      const messagesElement = document.querySelector('.messages');
+      if (messagesElement) {
+        conversationLog.insertBefore(visualizerCanvas, messagesElement);
+      } else {
+        conversationLog.appendChild(visualizerCanvas);
+      }
+      
+      // Get context
+      const visualizerContext = visualizerCanvas.getContext('2d');
+      
+      // Create analyzer node
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      
+      // Function to draw the visualizer
+      function draw() {
+        requestAnimationFrame(draw);
+        
+        // Get frequency data
+        analyser.getByteFrequencyData(dataArray);
+        
+        // Clear canvas
+        visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+        visualizerContext.fillStyle = '#222';
+        visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+        
+        // Draw bars
+        const barWidth = (visualizerCanvas.width / dataArray.length) * 2.5;
+        let x = 0;
+        
+        for (let i = 0; i < dataArray.length; i++) {
+          const barHeight = (dataArray[i] / 255) * visualizerCanvas.height;
+          
+          // Use different colors based on frequency
+          const hue = (i / dataArray.length) * 360;
+          visualizerContext.fillStyle = `hsl(${hue}, 100%, 50%)`;
+          
+          visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+          x += barWidth + 1;
+        }
+      }
+      
+      // Start drawing
+      draw();
+      
+      return {
+        analyser: analyser,
+        canvas: visualizerCanvas,
+        context: visualizerContext
+      };
+    } catch (error) {
+      console.error('Error setting up desktop visualizer:', error);
+      return null;
+    }
   }
 });

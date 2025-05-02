@@ -233,8 +233,14 @@ document.addEventListener('DOMContentLoaded', function() {
         await audioContext.resume();
       }
 
+      // Create source from stream
+      const source = audioContext.createMediaStreamSource(stream);
+      
       // Start visualizer
-      startAudioVisualization(stream);
+      if (audioAnalyser) {
+        source.connect(audioAnalyser);
+        startAudioVisualization();
+      }
 
       // Start speech recognition
       if (speechRecognition) {
@@ -594,23 +600,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
-  // Start audio visualization with stream
-  function startAudioVisualization(stream) {
-    if (!audioContext || !audioAnalyser) {
-      console.error('Audio context or analyzer not initialized');
+  // Start audio visualization
+  function startAudioVisualization() {
+    if (!audioAnalyser || !visualizerContext) {
+      console.error('Audio analyzer or visualizer context not initialized');
       return;
     }
-    
-    try {
-      // Create source from stream
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(audioAnalyser);
-      
-      // Start drawing
-      drawVisualizer();
-    } catch (error) {
-      console.error('Error starting audio visualization:', error);
-    }
+
+    // Start drawing
+    drawVisualizer();
   }
   
   // Draw visualizer
@@ -618,30 +616,34 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!visualizerCanvas || !visualizerContext || !audioAnalyser) {
       return;
     }
-    
+
     // Get frequency data
     audioAnalyser.getByteFrequencyData(visualizerData);
-    
+
     // Clear canvas
     visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-    
+    visualizerContext.fillStyle = '#222';
+    visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+
     // Draw bars
     const barWidth = (visualizerCanvas.width / visualizerData.length) * 2.5;
     let x = 0;
-    
+
     for (let i = 0; i < visualizerData.length; i++) {
       const barHeight = (visualizerData[i] / 255) * visualizerCanvas.height;
-      
+
       // Use different colors based on frequency
       const hue = (i / visualizerData.length) * 360;
       visualizerContext.fillStyle = `hsl(${hue}, 100%, 50%)`;
-      
+
       visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
       x += barWidth + 1;
     }
-    
-    // Continue animation
-    visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
+
+    // Continue animation if still transmitting
+    if (isTransmitting) {
+      visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
+    }
   }
   
   // Add message to the conversation log
