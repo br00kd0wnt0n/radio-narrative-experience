@@ -97,13 +97,15 @@ document.addEventListener('DOMContentLoaded', function() {
           }
         }
 
+        // Always update the display with interim results
         if (interimTranscript) {
           speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
         }
 
-        if (finalTranscript && !isProcessingMessage) {
+        // Update with final results
+        if (finalTranscript) {
           speechText.textContent = finalTranscript;
-          if (finalTranscript.trim() !== '' && socket && socket.connected) {
+          if (finalTranscript.trim() !== '' && socket && socket.connected && !isProcessingMessage) {
             console.log('Sending text message:', finalTranscript);
             addMessage('YOU', finalTranscript, 'user');
             // Send text message with proper format
@@ -516,6 +518,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Play audio if available
         if (data.audioPath) {
           console.log("Playing audio from path:", data.audioPath);
+          // Stop any existing audio playback
+          const existingAudio = document.querySelector('audio');
+          if (existingAudio) {
+            existingAudio.pause();
+            existingAudio.remove();
+          }
           playGeneratedAudio(data.audioPath);
         } else {
           console.log("No audio path available in response");
@@ -974,7 +982,19 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!document.querySelector('.speech-display')) {
       const speechDisplay = document.createElement('div');
       speechDisplay.className = 'speech-display';
-      speechDisplay.innerHTML = '<div class="speech-text"></div><div class="speech-status">Ready</div>';
+      speechDisplay.innerHTML = `
+        <div class="speech-text"></div>
+        <div class="speech-status">Ready</div>
+      `;
+      
+      // Add styles to ensure visibility
+      speechDisplay.style.cssText = `
+        background: rgba(0, 0, 0, 0.8);
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        color: #fff;
+      `;
       
       // Find the right place to insert it
       const walkieTalkie = document.querySelector('.walkie-talkie');
@@ -1084,8 +1104,16 @@ document.addEventListener('DOMContentLoaded', function() {
   function playGeneratedAudio(audioPath) {
     console.log('Playing generated audio:', audioPath);
     
+    // Stop any existing audio playback
+    const existingAudio = document.querySelector('audio');
+    if (existingAudio) {
+      existingAudio.pause();
+      existingAudio.remove();
+    }
+    
     // Create audio element
     const audio = new Audio(audioPath);
+    audio.className = 'response-audio'; // Add class for easy selection
     
     // Add radio effect
     createRadioVoiceEffect(audio);
@@ -1107,6 +1135,8 @@ document.addEventListener('DOMContentLoaded', function() {
         speechStatus.textContent = '';
         speechStatus.classList.remove('active');
       }
+      // Remove the audio element
+      audio.remove();
     };
     
     audio.onerror = (error) => {
@@ -1116,6 +1146,8 @@ document.addEventListener('DOMContentLoaded', function() {
         speechStatus.textContent = 'Error playing audio';
         speechStatus.classList.add('error');
       }
+      // Remove the audio element on error
+      audio.remove();
     };
     
     // Start playback
@@ -1126,6 +1158,8 @@ document.addEventListener('DOMContentLoaded', function() {
         speechStatus.textContent = 'Error playing audio';
         speechStatus.classList.add('error');
       }
+      // Remove the audio element on error
+      audio.remove();
     });
   }
   
