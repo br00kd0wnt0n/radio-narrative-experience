@@ -713,6 +713,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (!isTransmitting) return;
     
+    console.log('Stopping transmission...');
     isTransmitting = false;
     pushToTalkButton.classList.remove('active');
     document.querySelector('.transmission-indicator').classList.remove('active');
@@ -734,6 +735,7 @@ document.addEventListener('DOMContentLoaded', function() {
       try {
         // Add a small delay before stopping to ensure all audio is captured
         setTimeout(() => {
+          console.log('Stopping media recorder...');
           currentMediaRecorder.stop();
           console.log('Stopped recording');
         }, 100);
