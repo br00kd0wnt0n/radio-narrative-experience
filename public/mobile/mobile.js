@@ -72,32 +72,13 @@ document.addEventListener('DOMContentLoaded', function() {
       };
 
       speechRecognition.onresult = function(event) {
-        console.log('Speech recognition result:', event);
-        const speechText = document.querySelector('.speech-text');
-        if (!speechText) return;
-
-        let interimTranscript = '';
-        let finalTranscript = '';
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript;
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-
-        if (interimTranscript) {
-          speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
-        }
-
-        if (finalTranscript) {
-          speechText.textContent = finalTranscript;
-          if (finalTranscript.trim() !== '' && socket && socket.connected) {
-            console.log('Sending message:', finalTranscript);
-            addMessage('YOU', finalTranscript, 'user');
-            socket.emit('audio_message', { message: finalTranscript });
+        const transcript = event.results[0][0].transcript.trim();
+        if (transcript) {
+          console.log('Speech recognized:', transcript);
+          // Update the notepad with the transcription
+          const notepad = document.querySelector('.notepad');
+          if (notepad) {
+            notepad.textContent = transcript;
           }
         }
       };
@@ -629,48 +610,43 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Start audio visualization
   function startAudioVisualization() {
-    if (!audioAnalyser || !visualizerContext) {
-      console.error('Audio analyzer or visualizer context not initialized');
+    if (!audioContext || !audioAnalyser || !visualizerContext) {
+      console.error('Missing required audio context or visualizer elements');
       return;
     }
 
-    // Start drawing
-    drawVisualizer();
-  }
-  
-  // Draw visualizer
-  function drawVisualizer() {
-    if (!visualizerCanvas || !visualizerContext || !audioAnalyser) {
-      return;
-    }
+    const drawVisualizer = () => {
+      if (!isTransmitting) return;
 
-    // Get frequency data
-    audioAnalyser.getByteFrequencyData(visualizerData);
+      const bufferLength = audioAnalyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      audioAnalyser.getByteFrequencyData(dataArray);
 
-    // Clear canvas
-    visualizerContext.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
-    visualizerContext.fillStyle = '#222';
-    visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+      visualizerContext.fillStyle = '#222';
+      visualizerContext.fillRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
 
-    // Draw bars
-    const barWidth = (visualizerCanvas.width / visualizerData.length) * 2.5;
-    let x = 0;
+      const barWidth = (visualizerCanvas.width / bufferLength) * 2.5;
+      let x = 0;
 
-    for (let i = 0; i < visualizerData.length; i++) {
-      const barHeight = (visualizerData[i] / 255) * visualizerCanvas.height;
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * visualizerCanvas.height;
+        
+        // Create gradient based on frequency
+        const gradient = visualizerContext.createLinearGradient(0, visualizerCanvas.height, 0, 0);
+        gradient.addColorStop(0, '#00ff00');
+        gradient.addColorStop(0.5, '#ffff00');
+        gradient.addColorStop(1, '#ff0000');
+        
+        visualizerContext.fillStyle = gradient;
+        visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
+        
+        x += barWidth + 1;
+      }
 
-      // Use different colors based on frequency
-      const hue = (i / visualizerData.length) * 360;
-      visualizerContext.fillStyle = `hsl(${hue}, 100%, 50%)`;
-
-      visualizerContext.fillRect(x, visualizerCanvas.height - barHeight, barWidth, barHeight);
-      x += barWidth + 1;
-    }
-
-    // Continue animation if still transmitting
-    if (isTransmitting) {
       visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
-    }
+    };
+
+    drawVisualizer();
   }
   
   // Add message to the conversation log
@@ -756,8 +732,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Stop and cleanup recording
     if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
       try {
-        currentMediaRecorder.stop();
-        console.log('Stopped recording');
+        // Add a small delay before stopping to ensure all audio is captured
+        setTimeout(() => {
+          currentMediaRecorder.stop();
+          console.log('Stopped recording');
+        }, 100);
       } catch (error) {
         console.error('Error stopping media recorder:', error);
       }
