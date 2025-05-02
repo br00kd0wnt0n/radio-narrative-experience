@@ -682,63 +682,55 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }, { once: true });
 
-    // Create findings section
-    createFindingsSection();
+    // Create notepad section
+    createNotepadSection();
   }
   
-  // Function to create and manage the findings section
-  function createFindingsSection() {
-    const findingsSection = document.createElement('div');
-    findingsSection.className = 'findings-section';
-    findingsSection.innerHTML = `
-      <div class="findings-title">Findings Log</div>
-      <div class="findings-content"></div>
+  // Function to create and manage the notepad section
+  function createNotepadSection() {
+    const notepadSection = document.createElement('div');
+    notepadSection.className = 'notepad-section';
+    notepadSection.innerHTML = `
+      <h3>Notepad</h3>
+      <div class="notepad-content"></div>
     `;
-    
-    // Add to the container after the conversation log
-    const container = document.querySelector('.container');
-    if (container) {
-      container.appendChild(findingsSection);
-    }
+    document.querySelector('.container').appendChild(notepadSection);
   }
 
   // Function to add a finding to the log
   function addFinding(character, frequency, location, info) {
-    const findingsContent = document.querySelector('.findings-content');
-    if (!findingsContent) return;
+    const notepadContent = document.querySelector('.notepad-content');
+    if (!notepadContent) return;
 
-    const finding = document.createElement('div');
-    finding.className = 'finding';
-    
-    // Check if this character is already logged
-    const existingFinding = findingsContent.querySelector(`[data-character="${character}"]`);
+    // Check if we already have a finding for this character
+    const existingFinding = notepadContent.querySelector(`[data-character="${character}"]`);
     if (existingFinding) {
       // Update existing finding
-      const infoList = existingFinding.querySelector('.finding-info');
-      if (info && !infoList.textContent.includes(info)) {
-        infoList.innerHTML += `<li>${info}</li>`;
+      const infoElement = existingFinding.querySelector('.finding-info');
+      if (infoElement) {
+        infoElement.textContent = info;
       }
     } else {
       // Create new finding
+      const finding = document.createElement('div');
+      finding.className = 'finding';
       finding.setAttribute('data-character', character);
       finding.innerHTML = `
         <div class="finding-header">
           <span class="finding-character">${character}</span>
           <span class="finding-frequency">${frequency} MHz</span>
         </div>
-        <div class="finding-location">Location: ${location}</div>
-        <ul class="finding-info">
-          ${info ? `<li>${info}</li>` : ''}
-        </ul>
+        <div class="finding-location">${location}</div>
+        <div class="finding-info">${info}</div>
       `;
-      findingsContent.appendChild(finding);
+      notepadContent.appendChild(finding);
     }
   }
 
   // Start the application
   init();
 
-  // Add narrative progress tracking
+  // Update the story progress tracking
   function updateNarrativeProgress(progress, narrativeContext) {
     // Create or update progress element if it doesn't exist
     let progressElement = document.getElementById('narrative-progress');
@@ -750,12 +742,15 @@ document.addEventListener('DOMContentLoaded', function() {
       document.querySelector('.conversation-log').prepend(progressElement);
     }
     
-    // Update content
+    // Update content with more detailed progress information
     progressElement.innerHTML = `
       <div class="progress-bar">
         <div class="progress-fill" style="width: ${progress}%"></div>
       </div>
-      <div class="narrative-status">Story Progress: ${progress}%</div>
+      <div class="narrative-status">
+        <span class="progress-text">Story Progress: ${progress}%</span>
+        <span class="progress-context">${getProgressContext(progress)}</span>
+      </div>
     `;
     
     // Add system message about narrative development
@@ -764,6 +759,14 @@ document.addEventListener('DOMContentLoaded', function() {
     } else if (narrativeContext === 'advanced' && progress > 75) {
       addMessage('SYSTEM', 'Communications converging. Story approaching conclusion.', 'system');
     }
+  }
+
+  function getProgressContext(progress) {
+    if (progress < 25) return 'Initial Discoveries';
+    if (progress < 50) return 'Uncovering the Mystery';
+    if (progress < 75) return 'Deepening Investigation';
+    if (progress < 90) return 'Approaching Truth';
+    return 'Final Revelations';
   }
 
   // Function to play generated audio with radio effects

@@ -169,6 +169,7 @@ function checkNarrativeProgression(socketId) {
   // Count discovered key plot points
   let discoveredKeyPoints = 0;
   let maxDiscoveryOrder = 0;
+  let totalProgress = 0;
   
   for (const frequency of userDiscoveries) {
     const freqData = frequencies[frequency];
@@ -177,11 +178,25 @@ function checkNarrativeProgression(socketId) {
         maxDiscoveryOrder = freqData.discovery_order;
       }
       discoveredKeyPoints++;
+      totalProgress += freqData.discovery_order;
     }
   }
   
+  // Calculate average progress across all discovered frequencies
+  const averageProgress = discoveredKeyPoints > 0 ? totalProgress / discoveredKeyPoints : 0;
+  
   // Update story progress (0-100%)
-  narrativeState.storyProgress = Math.min(100, Math.round((maxDiscoveryOrder / 6) * 100));
+  // Use both max discovery order and average progress for smoother progression
+  narrativeState.storyProgress = Math.min(100, Math.round((averageProgress / 6) * 100));
+  
+  // Log progress for debugging
+  console.log('Story progress update:', {
+    socketId,
+    discoveredKeyPoints,
+    maxDiscoveryOrder,
+    averageProgress,
+    storyProgress: narrativeState.storyProgress
+  });
   
   // Trigger plot twist if 3+ frequencies discovered but not the key one
   if (discoveredKeyPoints >= 3 && !userDiscoveries.has('98.7') && !narrativeState.plotTwistTriggered) {

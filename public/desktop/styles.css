@@ -270,69 +270,85 @@ body {
     animation: pulse 2s infinite;
   }
   
-  /* Findings Section Styles */
-  .findings-section {
-    flex: 1;
-    background-color: #2a2a2a;
-    border-radius: 15px;
-    padding: 20px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-    max-height: 600px;
+  /* Header styles */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Orbitron', sans-serif;
+    color: #4caf50;
+    margin: 0;
+    padding: 0;
+    line-height: 1.2;
+  }
+  
+  h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+  }
+  
+  h2 {
+    font-size: 2rem;
+    margin-bottom: 0.8rem;
+  }
+  
+  h3 {
+    font-size: 1.75rem;
+    margin-bottom: 0.6rem;
+  }
+  
+  h4 {
+    font-size: 1.5rem;
+    margin-bottom: 0.4rem;
+  }
+  
+  /* Notepad section (formerly findings) */
+  .notepad-section {
+    background: rgba(0, 0, 0, 0.8);
+    border: 1px solid #4caf50;
+    border-radius: 4px;
+    padding: 1rem;
+    margin-top: 1rem;
+    max-height: 300px;
     overflow-y: auto;
   }
   
-  .findings-title {
-    font-size: 1.5rem;
+  .notepad-section h3 {
     color: #4caf50;
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #444;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+  }
+  
+  .notepad-content {
+    font-family: 'Courier New', monospace;
+    color: #4caf50;
+    white-space: pre-wrap;
   }
   
   .finding {
-    background-color: #333;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 15px;
-    border-left: 4px solid #4caf50;
+    margin-bottom: 1rem;
+    padding: 0.5rem;
+    border-left: 2px solid #4caf50;
   }
   
   .finding-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 0.5rem;
   }
   
   .finding-character {
-    font-size: 1.2rem;
-    color: #4caf50;
     font-weight: bold;
+    color: #4caf50;
   }
   
   .finding-frequency {
-    color: #2196f3;
-    font-family: monospace;
+    color: #8bc34a;
   }
   
   .finding-location {
-    color: #ff9800;
-    margin-bottom: 10px;
+    color: #cddc39;
     font-style: italic;
   }
   
   .finding-info {
-    list-style-type: none;
-    padding: 0;
-    margin: 0;
-  }
-  
-  .finding-info li {
     color: #e0e0e0;
-    padding: 5px 0;
-    border-bottom: 1px solid #444;
-  }
-  
-  .finding-info li:last-child {
-    border-bottom: none;
+    margin-top: 0.5rem;
   }
