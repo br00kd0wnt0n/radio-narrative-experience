@@ -62,32 +62,6 @@ document.addEventListener('DOMContentLoaded', function() {
       if (data && (data.message || data.text)) {
         addMessage(data.character, data.message || data.text, 'character');
         
-        // Add finding if it contains key information
-        if (data.text && data.text.includes('experiment')) {
-          addFinding(data.character, currentFrequency, '', 'Mentioned an experiment');
-        }
-        if (data.text && data.text.includes('breach')) {
-          addFinding(data.character, currentFrequency, '', 'Reported a containment breach');
-        }
-        if (data.text && data.text.includes('creature')) {
-          addFinding(data.character, currentFrequency, '', 'Sighted an unknown creature');
-        }
-        if (data.text && data.text.includes('evacuation')) {
-          addFinding(data.character, currentFrequency, '', 'Mentioned evacuation procedures');
-        }
-        if (data.text && data.text.includes('government')) {
-          addFinding(data.character, currentFrequency, '', 'Referenced government involvement');
-        }
-        if (data.text && data.text.includes('containment')) {
-          addFinding(data.character, currentFrequency, '', 'Discussed containment systems');
-        }
-        if (data.text && data.text.includes('radiation')) {
-          addFinding(data.character, currentFrequency, '', 'Reported radiation effects');
-        }
-        if (data.text && data.text.includes('mutation')) {
-          addFinding(data.character, currentFrequency, '', 'Observed mutations');
-        }
-        
         // Play audio if available
         if (data.audioPath) {
           console.log('Playing audio from path:', data.audioPath);
@@ -98,6 +72,93 @@ document.addEventListener('DOMContentLoaded', function() {
       } else {
         console.error("Invalid AI response data:", data);
         addMessage('SYSTEM', 'Received invalid response from server', 'system');
+      }
+    });
+    
+    // Add audio message handling
+    socket.on('audio_message', (data) => {
+      console.log('Received audio message:', data);
+      
+      if (data.audio) {
+        try {
+          // Convert base64 to blob
+          const byteCharacters = atob(data.audio);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const audioBlob = new Blob([byteArray], { type: 'audio/webm;codecs=opus' });
+          
+          // Create audio element
+          const audio = new Audio(URL.createObjectURL(audioBlob));
+          
+          // Add radio effect
+          if (audioContext) {
+            const source = audioContext.createMediaElementSource(audio);
+            
+            // Create radio effect filter chain
+            const bandpass = audioContext.createBiquadFilter();
+            bandpass.type = "bandpass";
+            bandpass.frequency.value = 1800;
+            bandpass.Q.value = 0.7;
+            
+            const highpass = audioContext.createBiquadFilter();
+            highpass.type = "highpass";
+            highpass.frequency.value = 500;
+            
+            const lowpass = audioContext.createBiquadFilter();
+            lowpass.type = "lowpass";
+            lowpass.frequency.value = 2500;
+            
+            // Create distortion for radio "crunch"
+            const distortion = audioContext.createWaveShaper();
+            distortion.curve = createDistortionCurve(20);
+            distortion.oversample = "4x";
+            
+            // Connect to visualizer if available
+            if (desktopVisualizer && desktopVisualizer.analyser) {
+              source.connect(desktopVisualizer.analyser);
+              desktopVisualizer.analyser.connect(bandpass);
+            }
+            
+            // Lower static volume during speech
+            if (staticGainNode) {
+              staticGainNode.gain.setValueAtTime(staticGainNode.gain.value, audioContext.currentTime);
+              staticGainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.2);
+            }
+            
+            // Connect nodes
+            source.connect(bandpass);
+            bandpass.connect(highpass);
+            highpass.connect(lowpass);
+            lowpass.connect(distortion);
+            distortion.connect(audioContext.destination);
+          }
+          
+          // Play audio
+          audio.play().catch(error => {
+            console.error('Error playing audio:', error);
+            addMessage('SYSTEM', 'Error playing audio transmission', 'system');
+          });
+          
+          // Restore static volume when finished
+          audio.onended = function() {
+            console.log('Audio playback finished');
+            if (staticGainNode) {
+              adjustStaticVolume();
+            }
+          };
+          
+          // Add message to log
+          addMessage('MOBILE', 'Transmission received', 'system');
+        } catch (error) {
+          console.error('Error processing audio message:', error);
+          addMessage('SYSTEM', 'Error processing audio transmission', 'system');
+        }
+      } else if (data.message) {
+        // Handle text message
+        addMessage('MOBILE', data.message, 'user');
       }
     });
     

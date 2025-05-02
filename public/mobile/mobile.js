@@ -259,28 +259,55 @@ document.addEventListener('DOMContentLoaded', function() {
         fallbackToTextInput();
       }
 
-      // Start recording
-      const mediaRecorder = new MediaRecorder(stream);
+      // Start recording with proper MIME type
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
       const audioChunks = [];
-
       mediaRecorder.ondataavailable = (event) => {
-        audioChunks.push(event.data);
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = () => {
-          const base64Audio = reader.result.split(',')[1];
-          socket.emit('audio_message', {
-            audio: base64Audio,
-            frequency: currentFrequency
-          });
-        };
+        if (audioChunks.length === 0) {
+          console.log('No audio data recorded');
+          return;
+        }
+
+        try {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+          const reader = new FileReader();
+          
+          reader.onloadend = () => {
+            const base64Audio = reader.result.split(',')[1];
+            console.log('Sending audio data, size:', base64Audio.length);
+            
+            if (socket && socket.connected) {
+              socket.emit('audio_message', {
+                audio: base64Audio,
+                frequency: currentFrequency,
+                timestamp: Date.now()
+              });
+            } else {
+              console.error('Socket not connected, cannot send audio');
+            }
+          };
+          
+          reader.onerror = (error) => {
+            console.error('Error reading audio data:', error);
+          };
+          
+          reader.readAsDataURL(audioBlob);
+        } catch (error) {
+          console.error('Error processing audio data:', error);
+        }
       };
 
-      mediaRecorder.start();
+      // Start recording with smaller time slices for more frequent updates
+      mediaRecorder.start(100);
       console.log('Started recording');
 
       // Store references for cleanup
@@ -726,9 +753,22 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
     
+    // Stop and cleanup recording
+    if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
+      try {
+        currentMediaRecorder.stop();
+        console.log('Stopped recording');
+      } catch (error) {
+        console.error('Error stopping media recorder:', error);
+      }
+    }
+    
     // Stop and cleanup stream
     if (currentStream) {
-      currentStream.getTracks().forEach(track => track.stop());
+      currentStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped audio track');
+      });
       currentStream = null;
     }
     
