@@ -37,6 +37,11 @@ document.addEventListener('DOMContentLoaded', function() {
   try {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     console.log('Audio context initialized');
+    
+    // Create gain node for button sounds
+    buttonSoundGainNode = audioContext.createGain();
+    buttonSoundGainNode.gain.value = 0.3;
+    buttonSoundGainNode.connect(audioContext.destination);
   } catch (error) {
     console.error('Failed to initialize audio context:', error);
   }
@@ -223,6 +228,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (speechText) speechText.textContent = '';
 
     try {
+      // Resume audio context if it's suspended
+      if (audioContext && audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
       // Start visualizer
       startAudioVisualization(stream);
 
@@ -825,28 +835,35 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Add button sound functions
   function playButtonSound(type) {
-    if (!audioContext) return;
+    if (!audioContext) {
+      console.error('Audio context not initialized');
+      return;
+    }
     
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(buttonSoundGainNode);
-    
-    if (type === 'start') {
-      // Higher pitched "click on" sound
-      oscillator.frequency.value = 1200;
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-      oscillator.start();
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-      setTimeout(() => oscillator.stop(), 100);
-    } else {
-      // Lower pitched "click off" sound
-      oscillator.frequency.value = 800;
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-      oscillator.start();
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-      setTimeout(() => oscillator.stop(), 100);
+    try {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      if (type === 'start') {
+        // Higher pitched "click on" sound
+        oscillator.frequency.value = 1200;
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        setTimeout(() => oscillator.stop(), 100);
+      } else {
+        // Lower pitched "click off" sound
+        oscillator.frequency.value = 800;
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        oscillator.start();
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+        setTimeout(() => oscillator.stop(), 100);
+      }
+    } catch (error) {
+      console.error('Error playing button sound:', error);
     }
   }
   
@@ -1049,18 +1066,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Set up push-to-talk
     setupPushToTalk();
     
-    // Initialize audio context immediately
-    if (!audioContext) {
-      try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        console.log('Audio context initialized');
-        addMessage('SYSTEM', 'Audio system initialized', 'system');
-      } catch (error) {
-        console.error('Failed to initialize audio context:', error);
-        addMessage('SYSTEM', 'Failed to initialize audio system', 'system');
-      }
-    }
-    
     // Initialize speech recognition immediately
     if (!speechRecognition) {
       const speechInit = initSpeechRecognition();
@@ -1085,6 +1090,11 @@ document.addEventListener('DOMContentLoaded', function() {
     permissionButton.className = 'permission-button';
     permissionButton.onclick = async () => {
       try {
+        // Resume audio context if it's suspended
+        if (audioContext && audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         console.log('Microphone permission granted');
         stream.getTracks().forEach(track => track.stop()); // Stop the stream after getting permission
