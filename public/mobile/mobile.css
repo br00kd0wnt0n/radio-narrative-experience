@@ -242,21 +242,16 @@ body {
 
 /* Speech Recognition Display */
 .speech-display {
-  position: absolute;
-  bottom: 120px;
-  left: 50%;
-  transform: translateX(-50%);
+  width: 100%;
   background: rgba(0, 0, 0, 0.8);
   color: #4caf50;
-  padding: 10px 20px;
-  border-radius: 20px;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 10px;
   font-family: 'Courier New', monospace;
   font-size: 16px;
   text-align: center;
-  min-width: 200px;
-  max-width: 80%;
   display: none;
-  z-index: 1000;
   border: 2px solid #4caf50;
   box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
 }
@@ -266,9 +261,11 @@ body {
 }
 
 .speech-text {
-  min-height: 20px;
-  margin-bottom: 5px;
+  min-height: 24px;
+  margin-bottom: 8px;
   color: white;
+  font-size: 18px;
+  line-height: 1.4;
 }
 
 .speech-text .interim {
@@ -277,8 +274,10 @@ body {
 }
 
 .speech-status {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .speech-status.active {

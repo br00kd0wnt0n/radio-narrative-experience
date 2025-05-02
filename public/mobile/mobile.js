@@ -102,7 +102,7 @@ document.addEventListener('DOMContentLoaded', function() {
           speechText.innerHTML = `<span class="interim">${interimTranscript}</span>`;
         }
 
-        // Update with final results
+        // Update with final results and add to message feed
         if (finalTranscript) {
           speechText.textContent = finalTranscript;
           if (finalTranscript.trim() !== '' && socket && socket.connected && !isProcessingMessage) {
@@ -1001,24 +1001,10 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="speech-status">Ready</div>
       `;
       
-      // Add styles to ensure visibility
-      speechDisplay.style.cssText = `
-        background: rgba(0, 0, 0, 0.8);
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-        color: #fff;
-      `;
-      
-      // Find the right place to insert it
-      const walkieTalkie = document.querySelector('.walkie-talkie');
-      if (walkieTalkie) {
-        const controls = document.querySelector('.controls');
-        if (controls) {
-          walkieTalkie.insertBefore(speechDisplay, controls);
-        } else {
-          walkieTalkie.appendChild(speechDisplay);
-        }
+      // Find the right place to insert it - above the push-to-talk button
+      const pushToTalkButton = document.querySelector('.push-to-talk');
+      if (pushToTalkButton) {
+        pushToTalkButton.parentNode.insertBefore(speechDisplay, pushToTalkButton);
       }
     }
   }
