@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentSource = null;
   let currentAudioContext = null;
   let currentAudioChunks = [];
+  let currentFrequency = null;
   
   // Initialize audio context immediately
   try {
@@ -302,17 +303,18 @@ document.addEventListener('DOMContentLoaded', function() {
           // Convert to base64
           const base64Audio = btoa(String.fromCharCode.apply(null, new Uint8Array(int16Data.buffer)));
 
-          // Send audio data
+          // Send audio data with frequency information
           socket.emit('audio_message', {
             audio: base64Audio,
-            frequency: currentFrequency,
+            frequency: currentFrequency || 'unknown',
             timestamp: Date.now(),
             format: 'raw'
           });
 
           console.log('Audio chunk sent:', {
             size: base64Audio.length,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            frequency: currentFrequency
           });
         } catch (error) {
           console.error('Error processing audio chunk:', error);
@@ -541,6 +543,7 @@ document.addEventListener('DOMContentLoaded', function() {
       
       if (data.active) {
         currentCharacter = data.character;
+        currentFrequency = data.frequency;
         activeFrequencyElement.textContent = `Active frequency: ${data.character}`;
         activeFrequencyElement.classList.add('active');
         
@@ -551,6 +554,7 @@ document.addEventListener('DOMContentLoaded', function() {
         addMessage('SYSTEM', `Active frequency detected: ${data.character}`, 'system');
       } else {
         currentCharacter = null;
+        currentFrequency = null;
         activeFrequencyElement.textContent = 'No active frequency';
         activeFrequencyElement.classList.remove('active');
         
