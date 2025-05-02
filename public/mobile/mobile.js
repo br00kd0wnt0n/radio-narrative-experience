@@ -243,8 +243,11 @@ document.addEventListener('DOMContentLoaded', function() {
           if (speechRecognition.state === 'listening') {
             speechRecognition.stop();
           }
-          speechRecognition.start();
-          console.log('Speech recognition started');
+          // Add a small delay before starting speech recognition
+          setTimeout(() => {
+            speechRecognition.start();
+            console.log('Speech recognition started');
+          }, 100);
         } catch (error) {
           console.error('Speech recognition start error:', error);
           fallbackToTextInput();
@@ -263,6 +266,7 @@ document.addEventListener('DOMContentLoaded', function() {
       mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunks.push(event.data);
+          console.log('Audio chunk received, size:', event.data.size);
         }
       };
 
@@ -274,6 +278,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         try {
           const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+          console.log('Audio blob created, size:', audioBlob.size);
+          
           const reader = new FileReader();
           
           reader.onloadend = () => {
@@ -286,9 +292,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 frequency: currentFrequency,
                 timestamp: Date.now()
               });
+              console.log('Audio data sent');
             } else {
               console.error('Socket not connected, cannot send audio');
             }
+          };
+          
+          reader.onerror = (error) => {
+            console.error('Error reading audio data:', error);
           };
           
           reader.readAsDataURL(audioBlob);
@@ -298,7 +309,7 @@ document.addEventListener('DOMContentLoaded', function() {
       };
 
       // Start recording with smaller time slices for more frequent updates
-      mediaRecorder.start(100);
+      mediaRecorder.start(50); // Reduced from 100ms to 50ms for more frequent updates
       console.log('Started recording');
 
       // Store references for cleanup
@@ -748,7 +759,7 @@ document.addEventListener('DOMContentLoaded', function() {
           console.log('Stopping media recorder...');
           currentMediaRecorder.stop();
           console.log('Stopped recording');
-        }, 100);
+        }, 200); // Increased from 100ms to 200ms to ensure all audio is captured
       } catch (error) {
         console.error('Error stopping media recorder:', error);
       }
