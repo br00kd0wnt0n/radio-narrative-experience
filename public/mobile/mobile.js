@@ -237,17 +237,14 @@ document.addEventListener('DOMContentLoaded', function() {
         startAudioVisualization();
       }
 
-      // Start speech recognition
+      // Start speech recognition immediately
       if (speechRecognition) {
         try {
           if (speechRecognition.state === 'listening') {
             speechRecognition.stop();
           }
-          // Add a small delay before starting speech recognition
-          setTimeout(() => {
-            speechRecognition.start();
-            console.log('Speech recognition started');
-          }, 50); // Reduced delay for faster start
+          speechRecognition.start();
+          console.log('Speech recognition started');
         } catch (error) {
           console.error('Speech recognition start error:', error);
           fallbackToTextInput();
@@ -308,8 +305,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       };
 
-      // Start recording with smaller time slices for more frequent updates
-      mediaRecorder.start(25); // Reduced to 25ms for even more frequent updates
+      // Start recording with minimal time slice for immediate capture
+      mediaRecorder.start(10); // Reduced to 10ms for immediate capture
       console.log('Started recording');
 
       // Store references for cleanup
@@ -754,15 +751,12 @@ document.addEventListener('DOMContentLoaded', function() {
     // Stop and cleanup recording
     if (currentMediaRecorder && currentMediaRecorder.state !== 'inactive') {
       try {
-        // Request final data chunk before stopping
+        // Request final data chunk immediately
         currentMediaRecorder.requestData();
         
-        // Add a small delay before stopping to ensure all audio is captured
-        setTimeout(() => {
-          console.log('Stopping media recorder...');
-          currentMediaRecorder.stop();
-          console.log('Stopped recording');
-        }, 300); // Increased delay to ensure all audio is captured
+        // Stop recording immediately after requesting data
+        currentMediaRecorder.stop();
+        console.log('Stopped recording');
       } catch (error) {
         console.error('Error stopping media recorder:', error);
       }
@@ -770,14 +764,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Stop and cleanup stream
     if (currentStream) {
-      // Add a delay before stopping the stream to ensure all audio is processed
-      setTimeout(() => {
-        currentStream.getTracks().forEach(track => {
-          track.stop();
-          console.log('Stopped audio track');
-        });
-        currentStream = null;
-      }, 400); // Delay stream cleanup to ensure audio processing completes
+      // Stop stream immediately after stopping recorder
+      currentStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped audio track');
+      });
+      currentStream = null;
     }
     
     // Stop visualizer animation
