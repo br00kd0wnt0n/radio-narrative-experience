@@ -213,6 +213,9 @@ document.addEventListener('DOMContentLoaded', function() {
     pushToTalkButton.classList.add('active');
     document.querySelector('.transmission-indicator').classList.add('active');
 
+    // Play button sound
+    playButtonSound('start');
+
     console.log('Starting transmission...');
 
     // Clear previous speech text
@@ -700,6 +703,9 @@ document.addEventListener('DOMContentLoaded', function() {
     isTransmitting = false;
     pushToTalkButton.classList.remove('active');
     document.querySelector('.transmission-indicator').classList.remove('active');
+
+    // Play button sound
+    playButtonSound('end');
 
     // Stop speech recognition
     if (speechRecognition && speechRecognition.state === 'listening') {
